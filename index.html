@@ -1365,9 +1365,9 @@ function cycleMkt(mkey, btnEl){
     btnEl.className = 'mkt-btn ' + (next==='対象市場'?'mkt-target':next==='対象外市場'?'mkt-out':'mkt-none');
     btnEl.textContent = next;
   }
-  // フィルターが有効な場合のみ再フィルタリング
+  // フィルターが有効な場合のみ再フィルタリング（ページ位置は維持する）
   if(document.getElementById('filter-market').value){
-    applyFilters();
+    applyFilters(true);
   }
 }
 
@@ -1675,11 +1675,11 @@ function _initApp(){
   // 起動時に水門関連市場タブを描画（mktList復元後に実行）
   setTimeout(initMarketTab, 500);
 
-  // リアルタイム更新時の再描画
+  // リアルタイム更新時の再描画（現在表示中のページ位置は維持する）
   window._onFirebaseUpdate = function(){
     loadMktData(); loadMktList(); loadExcludeWords(); loadSavedData();
     migrateMktStatusKeys();
-    updateStats(); applyFilters();
+    updateStats(); applyFilters(true);
     checkLoginState(); // アカウント情報が他端末で変更されていた場合に反映
   };
 }
@@ -2182,7 +2182,7 @@ function msClearAll(){
   updateCompanyToggleLabel();currentPage=1;applyFilters();
 }
 
-function applyFilters(){
+function applyFilters(keepPage){
   const q=document.getElementById('search-input').value.toLowerCase();
   const mktFilter=document.getElementById('filter-market').value;
   const pref=document.getElementById('filter-pref').value;
@@ -2196,7 +2196,9 @@ function applyFilters(){
     return true;
   });
   if(sortCol>=0) doSort();
-  updateStats(); updateExcludePanel(); currentPage=1; renderTable();
+  updateStats(); updateExcludePanel();
+  if(!keepPage) currentPage=1;
+  renderTable();
 }
 
 // ═══ ソート ══════════════════════════════════════════
