@@ -1287,6 +1287,43 @@ const MKT_KEY   = 'njss_market_status';
 const PLACE_KEY = 'njss_place_overrides';
 const MKT_CYCLE = ['未設定','対象市場','対象外市場'];
 
+// 市場区分の保存キー：案件ID（NJSSの安定した識別子）を優先使用。
+// 案件IDが無いデータ（一部CSV形式）のみ_rowIdにフォールバック。
+// ※_rowIdは「ファイル名+行番号」から生成されるため、再取込のたびに変わりうる不安定な値。
+//   案件IDを使うことで、別ファイル・別タイミングで同じ案件を取り込んでも
+//   市場区分の設定（対象市場／対象外市場）が正しく引き継がれる。
+function mktKey(row){
+  const id = (row && row.values && row.values[1]) ? String(row.values[1]).trim() : '';
+  return id ? ('id_'+id) : ('rid_'+row._rowId);
+}
+
+// 旧バージョン（_rowIdキー）で保存されていた市場区分データを、案件IDキーへ移行する
+function migrateMktStatusKeys(){
+  if(!marketStatus || typeof marketStatus !== 'object') return;
+  let migrated = 0;
+  const rowByRid = {};
+  allData.forEach(r=>{ rowByRid[r._rowId] = r; });
+  const newStatus = {};
+  Object.keys(marketStatus).forEach(oldKey=>{
+    const val = marketStatus[oldKey];
+    // 既にid_/rid_形式の新キーならそのまま維持
+    if(oldKey.startsWith('id_') || oldKey.startsWith('rid_')){
+      // 既存の新キーを優先。ただし空でなければ上書きしない
+      if(!(oldKey in newStatus)) newStatus[oldKey] = val;
+      return;
+    }
+    // 旧形式（生の_rowId）→ 該当する行を探して案件IDベースのキーに変換
+    const row = rowByRid[oldKey];
+    const newKey = row ? mktKey(row) : ('rid_'+oldKey);
+    if(!(newKey in newStatus)){
+      newStatus[newKey] = val;
+      if(newKey !== oldKey) migrated++;
+    }
+  });
+  marketStatus = newStatus;
+  if(migrated > 0) saveMktData();
+}
+
 function loadMktData(){
   try {
     const m = LS.get(MKT_KEY);
@@ -1317,10 +1354,10 @@ function setDate(rid, val){
   saveAddedData();
 }
 
-function cycleMkt(rid, btnEl){
-  const cur = marketStatus[rid] || '未設定';
+function cycleMkt(mkey, btnEl){
+  const cur = marketStatus[mkey] || '未設定';
   const next = MKT_CYCLE[(MKT_CYCLE.indexOf(cur)+1) % MKT_CYCLE.length];
-  marketStatus[rid] = next;
+  marketStatus[mkey] = next;
   saveMktData();
   updateStats();
   // クリックされたボタン要素を直接更新
@@ -1624,6 +1661,7 @@ function _initApp(){
   loadExcludeWords();
   loadEmbedded();
   loadSavedData();
+  migrateMktStatusKeys(); // 旧形式（_rowIdキー）の市場区分データを案件IDキーへ移行
   updateStats();
   applyFilters();
   renderFileChips();
@@ -1640,6 +1678,7 @@ function _initApp(){
   // リアルタイム更新時の再描画
   window._onFirebaseUpdate = function(){
     loadMktData(); loadMktList(); loadExcludeWords(); loadSavedData();
+    migrateMktStatusKeys();
     updateStats(); applyFilters();
     checkLoginState(); // アカウント情報が他端末で変更されていた場合に反映
   };
@@ -2150,7 +2189,7 @@ function applyFilters(){
   filtered=allData.filter(row=>{
     if(isExcluded(row)) return false;
     const v=row.values;
-    if(mktFilter){const m=marketStatus[row._rowId]||'未設定';if(m!==mktFilter)return false;}
+    if(mktFilter){const m=marketStatus[mktKey(row)]||'未設定';if(m!==mktFilter)return false;}
     if(selectedCompanies.size>0 && !selectedCompanies.has(v[0])) return false;
     if(pref&&v[5]!==pref) return false;
     if(q&&!v.some(c=>c.toLowerCase().includes(q))) return false;
@@ -2193,11 +2232,12 @@ function renderTable(){
   tbody.innerHTML=page.map((row,pi)=>{
     const v=row.values;
     const rid=row._rowId;
-    const mkt=marketStatus[rid]||'未設定';
+    const mk=mktKey(row);
+    const mkt=marketStatus[mk]||'未設定';
     const mktCls=mkt==='対象市場'?'mkt-target':mkt==='対象外市場'?'mkt-out':'mkt-none';
     const placeVal=placeOverrides[rid]||v[6];
     return '<tr>'
-      +'<td style="padding:6px 8px"><button class="mkt-btn '+mktCls+'" data-rid="'+esc(rid)+'" onclick="cycleMkt(this.dataset.rid, this)">'+esc(mkt)+'</button></td>'
+      +'<td style="padding:6px 8px"><button class="mkt-btn '+mktCls+'" data-rid="'+esc(mk)+'" onclick="cycleMkt(this.dataset.rid, this)">'+esc(mkt)+'</button></td>'
       +'<td class="col-company" title="'+esc(v[0])+'">'+esc(v[0])+'</td>'
       +'<td class="col-id">'+esc(v[1])+'</td>'
       +'<td class="col-name" title="'+esc(v[3])+'">'+esc(v[3])+'</td>'
@@ -2676,7 +2716,7 @@ function saveMktList(){
 }
 
 function syncMktFromCurrent(){
-  const targets=allData.filter(r=>(marketStatus[r._rowId]||'未設定')==='対象市場');
+  const targets=allData.filter(r=>(marketStatus[mktKey(r)]||'未設定')==='対象市場');
   let added=0;
   targets.forEach(r=>{
     const id=r.values[1], name=r.values[3];
@@ -2745,7 +2785,7 @@ function repairMktListDates(){
 }
 
 function updateMktCount(){
-  const t=allData.filter(r=>(marketStatus[r._rowId]||'未設定')==='対象市場');
+  const t=allData.filter(r=>(marketStatus[mktKey(r)]||'未設定')==='対象市場');
   document.getElementById('mkt-total-count').textContent=mktList.length.toLocaleString();
   document.getElementById('mkt-new-count').textContent=t.length.toLocaleString();
 }
@@ -2821,7 +2861,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   
 // ═══ 案件一覧→分析データ追加 ══════════════════════
 function pushToMktList(){
-  const targets = allData.filter(r=>(marketStatus[r._rowId]||'未設定')==='対象市場');
+  const targets = allData.filter(r=>(marketStatus[mktKey(r)]||'未設定')==='対象市場');
   if(targets.length === 0){
     showToast('⚠ 「対象市場」に設定された案件がありません', true);
     return;
