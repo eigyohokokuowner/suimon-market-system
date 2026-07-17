@@ -1616,6 +1616,18 @@ function _initApp(){
   // ログイン状態の確認（未ログインならログイン画面を表示、ログイン済みなら権限制御を適用）
   checkLoginState();
 
+  // ═══ データ初期化（Firebase同期完了後に実行） ══════════
+  // ここで初めてlocalStorageを読む＝Firebaseからの最新データが反映された後なので、
+  // 初回アクセス端末でも正しい件数が表示される
+  loadMktData();
+  loadMktList();
+  loadExcludeWords();
+  loadEmbedded();
+  loadSavedData();
+  updateStats();
+  applyFilters();
+  renderFileChips();
+
   document.getElementById('search-input').addEventListener('input',()=>{currentPage=1;applyFilters();});
   document.getElementById('filter-market').addEventListener('change',()=>{currentPage=1;applyFilters();});
   document.getElementById('filter-pref').addEventListener('change',()=>{currentPage=1;applyFilters();});
@@ -1819,6 +1831,9 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">受注会社</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">案件名</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">機関</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">施工場所</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;white-space:nowrap">案件公示日</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;white-space:nowrap">入札日</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">落札日</th>
             <th style="padding:8px 6px;text-align:right;color:var(--text-muted);font-size:10px">落札価格</th>
             <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:150px">取込方法</th>
@@ -1866,6 +1881,9 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
       <td style="padding:6px;color:var(--text)">${esc(row[0]||'')}</td>
       <td style="padding:6px;color:var(--text)">${esc(row[3]||'')}</td>
       <td style="padding:6px;color:var(--text-muted)">${esc(row[4]||'')}</td>
+      <td style="padding:6px;color:var(--text-muted)">${esc(row[6]||'')}</td>
+      <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[7]||'')}</td>
+      <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[8]||'')}</td>
       <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[11]||'')}</td>
       <td style="padding:6px;text-align:right;color:var(--yellow);white-space:nowrap">${priceNum?priceNum.toLocaleString():''}</td>
       <td style="padding:6px">${modeCell}</td>
@@ -1889,7 +1907,7 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
         </tr>`;
       };
       detailTr.innerHTML = `
-        <td colspan="9" style="padding:10px 20px;background:var(--surface2)">
+        <td colspan="12" style="padding:10px 20px;background:var(--surface2)">
           <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px">📋 案件対比（類似度 ${pct}%）</div>
           <table style="width:100%;border-collapse:collapse">
             <thead>
@@ -2776,17 +2794,9 @@ function pushToMktList(){
   updateMktCount();
   showToast('✓ ' + added + '件を分析データに追加しました');
 }
-// ═══ 起動処理（DOM構築後に実行） ══════════════════
-  loadMktData();
-  loadMktList();
-  loadExcludeWords();
-  loadEmbedded();
-  loadSavedData();
-  updateStats();
-  applyFilters();
-  renderFileChips();
-  // 初期タブが水門関連市場なのでDOM構築後に描画
-  setTimeout(initMarketTab, 0);
+// ═══ 起動処理はFirebase同期完了後（_initApp内）に実行する ═══
+// （DOMContentLoaded時点ではFirebaseからのデータ取得が完了していないため、
+//   ここで読込を行うと「初回アクセス端末で古い/空のデータが表示される」問題が起きる）
 });
 
 function hardResetMkt(){
