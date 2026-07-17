@@ -1318,16 +1318,23 @@ const PLACE_KEY = 'njss_place_overrides';
 const MKT_CYCLE = ['未設定','対象市場','対象外市場'];
 
 // 市場区分の保存キー：案件ID（NJSSの安定した識別子）を優先使用。
-// 案件IDが無いデータ（一部CSV形式）のみ_rowIdにフォールバック。
-// ※_rowIdは「ファイル名+行番号」から生成されるため、再取込のたびに変わりうる不安定な値。
-//   案件IDを使うことで、別ファイル・別タイミングで同じ案件を取り込んでも
-//   市場区分の設定（対象市場／対象外市場）が正しく引き継がれる。
+// 案件IDが無いデータは「案件名＋機関＋落札日」の組み合わせで安定したキーを生成。
+// （内容が同じなら、別ファイル・別タイミングで再取込しても同じキーになり、
+//   設定済みの市場区分（対象市場／対象外市場）が正しく引き継がれる）
+// ※_rowId（ファイル名+行番号）は再取込のたびに変わりうる不安定な値のため、
+//   全て空の異常データ時のみ最終フォールバックとして使用する。
 function mktKey(row){
-  const id = (row && row.values && row.values[1]) ? String(row.values[1]).trim() : '';
-  return id ? ('id_'+id) : ('rid_'+row._rowId);
+  const v = row && row.values;
+  const id = (v && v[1]) ? String(v[1]).trim() : '';
+  if(id) return 'id_'+id;
+  const name = (v && v[3]) ? String(v[3]).trim() : '';
+  const org  = (v && v[4]) ? String(v[4]).trim() : '';
+  const date = (v && v[11]) ? String(v[11]).trim() : '';
+  if(name || org || date) return 'nod_'+name+'|'+org+'|'+date;
+  return 'rid_'+row._rowId;
 }
 
-// 旧バージョン（_rowIdキー）で保存されていた市場区分データを、案件IDキーへ移行する
+// 旧バージョン（_rowIdキー）で保存されていた市場区分データを、新形式のキーへ移行する
 function migrateMktStatusKeys(){
   if(!marketStatus || typeof marketStatus !== 'object') return;
   let migrated = 0;
@@ -1336,13 +1343,24 @@ function migrateMktStatusKeys(){
   const newStatus = {};
   Object.keys(marketStatus).forEach(oldKey=>{
     const val = marketStatus[oldKey];
-    // 既にid_/rid_形式の新キーならそのまま維持
-    if(oldKey.startsWith('id_') || oldKey.startsWith('rid_')){
-      // 既存の新キーを優先。ただし空でなければ上書きしない
+    // 既にid_/nod_/rid_形式の新キーならそのまま維持
+    if(oldKey.startsWith('id_') || oldKey.startsWith('nod_') || oldKey.startsWith('rid_')){
+      // rid_形式は旧仕様の可能性があるため、該当行が見つかれば再度新キーへ変換を試みる
+      if(oldKey.startsWith('rid_')){
+        const rawRid = oldKey.slice(4);
+        const row = rowByRid[rawRid];
+        if(row){
+          const newKey = mktKey(row);
+          if(newKey !== oldKey){
+            if(!(newKey in newStatus)){ newStatus[newKey] = val; migrated++; }
+            return;
+          }
+        }
+      }
       if(!(oldKey in newStatus)) newStatus[oldKey] = val;
       return;
     }
-    // 旧形式（生の_rowId）→ 該当する行を探して案件IDベースのキーに変換
+    // さらに旧形式（生の_rowId、プレフィックスなし）→ 該当する行を探して新キーに変換
     const row = rowByRid[oldKey];
     const newKey = row ? mktKey(row) : ('rid_'+oldKey);
     if(!(newKey in newStatus)){
