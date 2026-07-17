@@ -1829,13 +1829,13 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
             <th style="padding:8px 6px;width:34px"></th>
             <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:60px">類似度</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">受注会社</th>
-            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">案件名</th>
+            <th id="csv-th-title" style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;cursor:pointer;user-select:none">案件名 <span class="csv-sort-arrow" data-key="title"></span></th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-muted);font-size:10px">落札価格</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">機関</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">施工場所</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;white-space:nowrap">案件公示日</th>
             <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;white-space:nowrap">入札日</th>
-            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">落札日</th>
-            <th style="padding:8px 6px;text-align:right;color:var(--text-muted);font-size:10px">落札価格</th>
+            <th id="csv-th-date" style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px;cursor:pointer;user-select:none">落札日 <span class="csv-sort-arrow" data-key="date"></span></th>
             <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:150px">取込方法</th>
             <th style="padding:8px 6px;width:50px"></th>
           </tr>
@@ -1852,10 +1852,61 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
   document.body.appendChild(overlay);
 
   const tbody = box.querySelector('#csv-review-tbody');
-  // 類似度が高い順に表示（要確認の案件を上に集める）。data-idxは元のcandidates配列のインデックスを維持。
-  const displayOrder = candidates.map((c,idx)=>idx).sort((a,b)=>(candidates[b].matchPct||0)-(candidates[a].matchPct||0));
 
-  displayOrder.forEach(idx=>{
+  // 各行の取込モード（'add'=新規追加／'replace'=既存と入替）とチェック状態を保持（再描画をまたいで維持）
+  const rowModes = {};
+  const checkedState = {};
+  candidates.forEach((c,idx)=>{ rowModes[idx] = 'add'; checkedState[idx] = true; });
+
+  // ソート状態： key='similarity'(デフォルト)|'title'|'date'、dir='asc'|'desc'
+  let sortKey = 'similarity';
+  let sortDir = 'desc';
+
+  function parseDateForSort(str){
+    const s = String(str||'').trim();
+    if(!s) return null;
+    const m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if(!m) return null;
+    const t = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])).getTime();
+    return isNaN(t) ? null : t;
+  }
+
+  function computeDisplayOrder(){
+    const idxs = candidates.map((c,idx)=>idx);
+    if(sortKey==='similarity'){
+      idxs.sort((a,b)=>(candidates[b].matchPct||0)-(candidates[a].matchPct||0));
+    } else if(sortKey==='title'){
+      idxs.sort((a,b)=>{
+        const ta = String(candidates[a].row[3]||''), tb = String(candidates[b].row[3]||'');
+        const cmp = ta.localeCompare(tb, 'ja');
+        return sortDir==='asc' ? cmp : -cmp;
+      });
+    } else if(sortKey==='date'){
+      idxs.sort((a,b)=>{
+        const da = parseDateForSort(candidates[a].row[11]);
+        const db = parseDateForSort(candidates[b].row[11]);
+        // 日付なしは常に末尾へ
+        if(da===null && db===null) return 0;
+        if(da===null) return 1;
+        if(db===null) return -1;
+        return sortDir==='asc' ? da-db : db-da;
+      });
+    }
+    return idxs;
+  }
+
+  function updateSortArrows(){
+    box.querySelectorAll('.csv-sort-arrow').forEach(el=>{
+      const key = el.dataset.key;
+      if(key===sortKey) el.textContent = sortDir==='asc' ? '▲' : '▼';
+      else el.textContent = '';
+    });
+  }
+
+  function renderRows(){
+    tbody.innerHTML = '';
+    const displayOrder = computeDisplayOrder();
+    displayOrder.forEach(idx=>{
     const c = candidates[idx];
     const row = c.row;
     const pct = Math.round((c.matchPct||0)*100);
@@ -1865,27 +1916,29 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
     const tr = document.createElement('tr');
     tr.style.cssText = 'border-bottom:1px solid var(--border);cursor:pointer';
     tr.dataset.idx = idx;
+    if(rowModes[idx]==='replace') tr.style.background = 'rgba(255,95,126,0.06)';
 
+    const modeIsReplace = rowModes[idx]==='replace';
     const modeCell = c.matchRow
       ? `<div class="csv-mode-toggle" data-idx="${idx}" style="display:flex;gap:4px;justify-content:center">
-           <button type="button" class="csv-mode-btn csv-mode-add active" data-idx="${idx}" data-mode="add"
-             style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:var(--accent2);color:var(--accent);cursor:pointer">＋追加</button>
-           <button type="button" class="csv-mode-btn csv-mode-replace" data-idx="${idx}" data-mode="replace"
-             style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer">⇄入替</button>
+           <button type="button" class="csv-mode-btn csv-mode-add${modeIsReplace?'':' active'}" data-idx="${idx}" data-mode="add"
+             style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid ${modeIsReplace?'var(--border)':'var(--accent)'};background:${modeIsReplace?'transparent':'var(--accent2)'};color:${modeIsReplace?'var(--text-muted)':'var(--accent)'};cursor:pointer">＋追加</button>
+           <button type="button" class="csv-mode-btn csv-mode-replace${modeIsReplace?' active':''}" data-idx="${idx}" data-mode="replace"
+             style="font-size:10px;padding:3px 8px;border-radius:12px;border:1px solid ${modeIsReplace?'var(--red)':'var(--border)'};background:${modeIsReplace?'rgba(255,95,126,0.2)':'transparent'};color:${modeIsReplace?'var(--red)':'var(--text-muted)'};cursor:pointer">⇄入替</button>
          </div>`
       : `<span style="font-size:10px;color:var(--text-muted)">新規追加</span>`;
 
     tr.innerHTML = `
-      <td style="padding:6px"><input type="checkbox" class="csv-review-check" data-idx="${idx}" checked></td>
+      <td style="padding:6px"><input type="checkbox" class="csv-review-check" data-idx="${idx}" ${checkedState[idx]?'checked':''}></td>
       <td style="padding:6px;text-align:center;font-weight:700;color:${pctColor}">${c.matchRow ? pct+'%' : '－'}</td>
       <td style="padding:6px;color:var(--text)">${esc(row[0]||'')}</td>
       <td style="padding:6px;color:var(--text)">${esc(row[3]||'')}</td>
+      <td style="padding:6px;text-align:right;color:var(--yellow);white-space:nowrap">${priceNum?priceNum.toLocaleString():''}</td>
       <td style="padding:6px;color:var(--text-muted)">${esc(row[4]||'')}</td>
       <td style="padding:6px;color:var(--text-muted)">${esc(row[6]||'')}</td>
       <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[7]||'')}</td>
       <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[8]||'')}</td>
       <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[11]||'')}</td>
-      <td style="padding:6px;text-align:right;color:var(--yellow);white-space:nowrap">${priceNum?priceNum.toLocaleString():''}</td>
       <td style="padding:6px">${modeCell}</td>
       <td style="padding:6px;text-align:center">${c.matchRow ? '<span style="color:var(--accent);font-size:11px">🔍対比</span>' : ''}</td>
     `;
@@ -1936,17 +1989,22 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
         detailTr.style.display = detailTr.style.display==='none' ? '' : 'none';
       });
     }
-  });
-
-  // 各行の取込モード（'add'=新規追加／'replace'=既存と入替）。デフォルトは全て'add'
-  const rowModes = {};
-  candidates.forEach((c,idx)=>{ rowModes[idx] = 'add'; });
+    });
+    updateSortArrows();
+    updateCount();
+  }
 
   function updateCount(){
-    const n = box.querySelectorAll('.csv-review-check:checked').length;
+    const n = Object.values(checkedState).filter(Boolean).length;
     box.querySelector('#csv-review-count').textContent = n+' 件選択中';
   }
-  tbody.addEventListener('change', e=>{ if(e.target.classList.contains('csv-review-check')) updateCount(); });
+  tbody.addEventListener('change', e=>{
+    if(e.target.classList.contains('csv-review-check')){
+      const idx = parseInt(e.target.dataset.idx);
+      checkedState[idx] = e.target.checked;
+      updateCount();
+    }
+  });
 
   // モード切替ボタン（＋追加／⇄入替）
   tbody.addEventListener('click', e=>{
@@ -1967,11 +2025,23 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
     if(tr) tr.style.background = mode==='replace' ? 'rgba(255,95,126,0.06)' : '';
   });
 
+  // 案件名・落札日ヘッダークリックでソート
+  function handleSortClick(key){
+    if(sortKey===key){ sortDir = sortDir==='asc' ? 'desc' : 'asc'; }
+    else { sortKey = key; sortDir = 'asc'; }
+    renderRows();
+  }
+  box.querySelector('#csv-th-title').addEventListener('click', ()=>handleSortClick('title'));
+  box.querySelector('#csv-th-date').addEventListener('click', ()=>handleSortClick('date'));
+
+  // 初回描画
+  renderRows();
+
   box.querySelector('#csv-review-select-all').addEventListener('click', ()=>{
-    box.querySelectorAll('.csv-review-check').forEach(cb=>cb.checked=true); updateCount();
+    box.querySelectorAll('.csv-review-check').forEach(cb=>{ cb.checked=true; checkedState[parseInt(cb.dataset.idx)]=true; }); updateCount();
   });
   box.querySelector('#csv-review-select-none').addEventListener('click', ()=>{
-    box.querySelectorAll('.csv-review-check').forEach(cb=>cb.checked=false); updateCount();
+    box.querySelectorAll('.csv-review-check').forEach(cb=>{ cb.checked=false; checkedState[parseInt(cb.dataset.idx)]=false; }); updateCount();
   });
   box.querySelector('#csv-review-cancel').addEventListener('click', ()=>{
     document.body.removeChild(overlay);
