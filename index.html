@@ -1750,6 +1750,15 @@ if(window._firebaseReady){
 function normalizeTitleForDup(t){
   return String(t||'').trim();
 }
+// 落札価格を正規化（カンマ・円マーク等を除去して数値文字列にする）
+function normalizePriceForDup(p){
+  const n = String(p||'').replace(/[^0-9.-]/g,'');
+  return n;
+}
+// 重複判定キー：案件名＋落札価格の完全一致で判定する
+function dupKey(title, price){
+  return normalizeTitleForDup(title) + '\u0000' + normalizePriceForDup(price);
+}
 
 // 文字bi-gramベースのDice係数による類似度算出（0〜1）
 function titleBigrams(str){
@@ -1783,9 +1792,9 @@ async function handleFiles(files, isHK){
   if(!files.length)return;
   showLoading(true);
 
-  // 既存データの案件名セット（全allData対象・重複判定用）
+  // 既存データの案件名＋落札価格セット（全allData対象・重複判定用）
   const existingTitles = new Set(
-    allData.map(r=>normalizeTitleForDup(r.values[3])).filter(Boolean)
+    allData.map(r=>dupKey(r.values[3], r.values[12])).filter(k=>k!=='\u0000')
   );
   const existingIds = new Set(allData.map(r=>r.values[1]).filter(Boolean));
   // 案件名 → 既存行データ（類似度対比用。同名が複数ある場合は最初の1件を代表とする）
@@ -1808,7 +1817,7 @@ async function handleFiles(files, isHK){
       updated++;
       // ファイル差し替え時は既存タイトルセットも作り直す（削除分を反映）
       existingTitles.clear();
-      allData.map(r=>normalizeTitleForDup(r.values[3])).filter(Boolean).forEach(t=>existingTitles.add(t));
+      allData.map(r=>dupKey(r.values[3], r.values[12])).filter(k=>k!=='\u0000').forEach(t=>existingTitles.add(t));
       existingIds.clear();
       allData.map(r=>r.values[1]).filter(Boolean).forEach(id=>existingIds.add(id));
       existingRowsByTitle.clear();
@@ -1854,14 +1863,15 @@ async function handleFiles(files, isHK){
       // 案件IDがある場合のみ重複チェック（従来通り）
       if(id && existingIds.has(id)) return;
 
-      // 案件名の完全一致重複チェック（100%一致のみ自動スキップ）
+      // 案件名＋落札価格の完全一致重複チェック（両方一致のみ自動スキップ）
       const title = normalizeTitleForDup(row[3]);
-      if(title && existingTitles.has(title)){
+      const dk = dupKey(row[3], row[12]);
+      if(title && dk !== '\u0000' && existingTitles.has(dk)){
         titleDupSkipped++;
         return;
       }
       if(id) existingIds.add(id);
-      if(title) existingTitles.add(title); // 同一バッチ内の重複タイトルも以後スキップ
+      if(dk !== '\u0000') existingTitles.add(dk); // 同一バッチ内の重複も以後スキップ
 
       // 類似度比較は「既に登録済みのデータ」のみを対象とする（入れ替え候補の特定に使うため）
       const simInfo = findMostSimilarExisting(title, existingRowsByTitle);
@@ -1877,7 +1887,7 @@ async function handleFiles(files, isHK){
 
   if(reviewCandidates.length===0){
     if(titleDupSkipped>0){
-      showToast('⚠ 全て案件名が重複のため取込対象はありません（'+titleDupSkipped+'件スキップ）', true);
+      showToast('⚠ 全て案件名+落札価格が重複のため取込対象はありません（'+titleDupSkipped+'件スキップ）', true);
     } else if(updated===0){
       showToast('❌ 取込対象データがありません', true);
     }
@@ -1902,13 +1912,13 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
   box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:960px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
 
   const skipMsg = titleDupSkipped>0
-    ? `<div style="font-size:12px;color:var(--yellow);margin-top:4px">⚠ 案件名が完全一致する ${titleDupSkipped} 件は自動的にスキップされました（重複取込防止）</div>`
+    ? `<div style="font-size:12px;color:var(--yellow);margin-top:4px">⚠ 案件名+落札価格が完全一致する ${titleDupSkipped} 件は自動的にスキップされました（重複取込防止）</div>`
     : '';
 
   box.innerHTML = `
     <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
       <div style="font-size:15px;font-weight:700;color:var(--text)">📂 CSV取込プレビュー（${candidates.length}件）</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">案件名が完全一致しない案件のみ表示しています。各行の「類似度」は既存データとの案件名一致率です。行をクリックすると対比表示できます。</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">案件名+落札価格が完全一致しない案件のみ表示しています。各行の「類似度」は既存データとの案件名一致率です。行をクリックすると対比表示できます。</div>
       ${skipMsg}
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button class="btn" id="csv-review-select-all" style="font-size:11px;padding:4px 10px">全て選択</button>
@@ -2141,7 +2151,7 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
   box.querySelector('#csv-review-cancel').addEventListener('click', ()=>{
     document.body.removeChild(overlay);
     if(updated>0){ rebuildFilters(); applyFilters(); renderFileChips(); saveAddedData(); }
-    showToast('取込をキャンセルしました（案件名重複 '+titleDupSkipped+' 件は既にスキップ済み）');
+    showToast('取込をキャンセルしました（案件名+落札価格重複 '+titleDupSkipped+' 件は既にスキップ済み）');
   });
   box.querySelector('#csv-review-confirm').addEventListener('click', ()=>{
     const checkedIdx = [...box.querySelectorAll('.csv-review-check:checked')].map(cb=>parseInt(cb.dataset.idx));
@@ -2168,7 +2178,7 @@ function openCsvReviewModal(candidates, titleDupSkipped, updated){
     });
     document.body.removeChild(overlay);
     rebuildFilters(); applyFilters(); renderFileChips(); saveAddedData();
-    const skipMsgToast = titleDupSkipped>0 ? '（案件名重複 '+titleDupSkipped+' 件は自動スキップ）' : '';
+    const skipMsgToast = titleDupSkipped>0 ? '（案件名+落札価格重複 '+titleDupSkipped+' 件は自動スキップ）' : '';
     const replaceMsg = replaced>0 ? '　うち '+replaced+' 件は既存案件と入替' : '';
     showToast('✓ '+added+' 件を取り込みました'+replaceMsg+skipMsgToast);
   });
