@@ -2766,7 +2766,6 @@ let anaYear  = 'all';
 const MKT_COLS = ['受注会社','案件ID','案件名','機関','機関所在地','施工場所','落札日(契約日)','落札価格(税抜)','年度','入札形式','入札資格','追加元'];
 
 function loadMktList(){
-  const DATA_VERSION = 'v3';
   const cleared = LS.get('njss_mkt_cleared');
 
   if(cleared){
@@ -2783,21 +2782,19 @@ function loadMktList(){
   } else {
     // 未クリア：PAST_MKT_DATAをベースにロード
     mktList = PAST_MKT_DATA.map(d=>Object.assign({},d));
-    const savedVer = LS.get(MKT_LIST_KEY+'_ver');
-    if(savedVer === DATA_VERSION){
-      const s = LS.get(MKT_LIST_KEY);
-      if(s){
-        try{
-          const extras = JSON.parse(s);
-          extras.forEach(r=>{
-            const id = r['案件ID']||'';
-            if(!id || !mktList.find(m=>m['案件ID']===id)) mktList.push(r);
-          });
-        }catch(e){}
-      }
-    } else {
-      LS.remove(MKT_LIST_KEY);
-      LS.set(MKT_LIST_KEY+'_ver', DATA_VERSION);
+    // 追加データ（案件仕訳から反映した分）を必ずマージする。
+    // ※以前はバージョンマーカー（njss_mkt_list_ver）が一時的に見つからない場合に
+    //   追加データを削除（Firebase側も削除）してしまう危険なロジックがあったため撤去した。
+    //   バージョンの一致・不一致に関わらず、存在する追加データは常に取り込む。
+    const s = LS.get(MKT_LIST_KEY);
+    if(s){
+      try{
+        const extras = JSON.parse(s);
+        extras.forEach(r=>{
+          const id = r['案件ID']||'';
+          if(!id || !mktList.find(m=>m['案件ID']===id)) mktList.push(r);
+        });
+      }catch(e){}
     }
   }
   // 集計除外リストの読込
