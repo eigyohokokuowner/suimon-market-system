@@ -2972,7 +2972,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       renderAnalysis();
     }
   });
-  
+}); // ← DOMContentLoadedはここで閉じる（以降の関数はグローバルスコープにする）
+
 // ═══ 案件一覧→分析データ追加 ══════════════════════
 // 既存mktListから、指定タイトルに最も類似する案件（オブジェクト）を探す
 function findMostSimilarMktItem(title){
@@ -3247,10 +3248,9 @@ function openMktPushReviewModal(candidates, totalTargetCount){
     showToast('✓ ' + parts.join('／'));
   });
 }
-// ═══ 起動処理はFirebase同期完了後（_initApp内）に実行する ═══
-// （DOMContentLoaded時点ではFirebaseからのデータ取得が完了していないため、
+// （注：起動処理はFirebase同期完了後の_initApp内で実行される設計。
+//   DOMContentLoaded時点ではFirebaseからのデータ取得が完了していないため、
 //   ここで読込を行うと「初回アクセス端末で古い/空のデータが表示される」問題が起きる）
-});
 
 function hardResetMkt(){
   if(!confirm('市場分析データを完全リセットします。\nPAST_MKT_DATA（5,832件）で再初期化します。\n※集計除外（特殊案件）リストも削除されます。よろしいですか？')) return;
