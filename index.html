@@ -1408,6 +1408,14 @@ function setOrg(rid, val){
   saveAddedData();
 }
 
+// 豊国工業（元請け）／豊国（下請）を工事ごとに手動で切替
+function setToyokuniType(rid, val){
+  const row = allData.find(r=>r._rowId===rid);
+  if(row) row.values[0] = val;
+  saveAddedData();
+  showToast('✓ 「'+esc(row?row.values[3]:'')+'」を'+val+'に変更しました');
+}
+
 function cycleMkt(mkey, btnEl){
   const cur = marketStatus[mkey] || '未設定';
   const next = MKT_CYCLE[(MKT_CYCLE.indexOf(cur)+1) % MKT_CYCLE.length];
@@ -2304,9 +2312,16 @@ function renderTable(){
     const mkt=marketStatus[mk]||'未設定';
     const mktCls=mkt==='対象市場'?'mkt-target':mkt==='対象外市場'?'mkt-out':'mkt-none';
     const placeVal=placeOverrides[rid]||v[6];
+    const isToyokuni = (v[0]==='豊国工業' || v[0]==='豊国（下請）');
+    const companyCell = isToyokuni
+      ? '<select class="toyokuni-select" data-rid="'+esc(rid)+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--green);font-size:12px;padding:3px 4px;cursor:pointer" onchange="setToyokuniType(this.dataset.rid,this.value)">'
+          +'<option value="豊国工業"'+(v[0]==='豊国工業'?' selected':'')+'>豊国工業</option>'
+          +'<option value="豊国（下請）"'+(v[0]==='豊国（下請）'?' selected':'')+'>豊国（下請）</option>'
+        +'</select>'
+      : '<span title="'+esc(v[0])+'">'+esc(v[0])+'</span>';
     return '<tr>'
       +'<td style="padding:6px 8px"><button class="mkt-btn '+mktCls+'" data-rid="'+esc(mk)+'" onclick="cycleMkt(this.dataset.rid, this)">'+esc(mkt)+'</button></td>'
-      +'<td class="col-company" title="'+esc(v[0])+'">'+esc(v[0])+'</td>'
+      +'<td class="col-company">'+companyCell+'</td>'
       +'<td class="col-id">'+esc(v[1])+'</td>'
       +'<td class="col-name" title="'+esc(v[3])+'">'+esc(v[3])+'</td>'
       +'<td><input type="text" class="org-edit-input" style="background:transparent;border:1px solid transparent;border-radius:4px;color:var(--text);font-size:12px;padding:3px 6px;width:100%;box-sizing:border-box" value="'+esc(v[4])+'" title="クリックして機関名を編集" onfocus="this.style.background=\'var(--surface2)\';this.style.borderColor=\'var(--accent)\'" onblur="this.style.background=\'transparent\';this.style.borderColor=\'transparent\'" onchange="setOrg(\''+rid+'\',this.value)"></td>'
@@ -2725,7 +2740,9 @@ function switchTab(id){
 
 // ═══ 市場分析データ管理 ════════════════════════════
 const MKT_LIST_KEY = 'njss_mkt_list';
+const MKT_EXCLUDED_KEY = 'njss_mkt_list_excluded';
 let mktList = [];
+let mktListExcluded = []; // 集計除外（特殊案件）：各社受注案件リストには表示するが、分析・集計からは除外
 let anaYear  = 'all';
 const MKT_COLS = ['受注会社','案件ID','案件名','機関','機関所在地','施工場所','落札日(契約日)','落札価格(税抜)','年度','入札形式','入札資格','追加元'];
 
@@ -2764,10 +2781,20 @@ function loadMktList(){
       LS.set(MKT_LIST_KEY+'_ver', DATA_VERSION);
     }
   }
+  // 集計除外リストの読込
+  try{
+    const se = LS.get(MKT_EXCLUDED_KEY);
+    mktListExcluded = se ? JSON.parse(se) : [];
+  }catch(e){ mktListExcluded = []; }
+
   const _repairedCount = repairMktListDates();
   const _renamedCount = repairMktListCompanyNames();
   if(_repairedCount > 0 || _renamedCount > 0){ saveMktList(); }
   updateMktCount();
+}
+
+function saveMktListExcluded(){
+  try{ LS.set(MKT_EXCLUDED_KEY, JSON.stringify(mktListExcluded)); }catch(e){}
 }
 
 // 会社合併・名称変更に伴う既存mktListデータの社名統一
@@ -2947,6 +2974,16 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   
 // ═══ 案件一覧→分析データ追加 ══════════════════════
+// 既存mktListから、指定タイトルに最も類似する案件（オブジェクト）を探す
+function findMostSimilarMktItem(title){
+  let bestPct = 0, bestItem = null;
+  [...mktList, ...mktListExcluded].forEach(item=>{
+    const pct = titleSimilarity(title, normalizeTitleForDup(item['案件名']));
+    if(pct > bestPct){ bestPct = pct; bestItem = item; }
+  });
+  return { pct: bestPct, item: bestItem };
+}
+
 function pushToMktList(){
   const targets = allData.filter(r=>(marketStatus[mktKey(r)]||'未設定')==='対象市場');
   if(targets.length === 0){
@@ -2962,34 +2999,253 @@ function pushToMktList(){
     showToast('ℹ 追加できる新規案件はありません（全件既に追加済み）');
     return;
   }
-  if(!confirm('案件一覧の「対象市場」' + targets.length + '件のうち\n新規 ' + newItems.length + '件を分析データに追加します。\nよろしいですか？')){
-    return;
-  }
-  let added = 0;
-  newItems.forEach(r=>{
-    const id    = r.values[1];
-    const name  = r.values[3];
-    const price = Math.round(parseFloat((r.values[12]||'').replace(/[^0-9.-]/g,''))||0);
-    const date  = r.values[11];
-    mktList.push({
-      '受注会社':       toShortCompanyName(normalizeCompany(r.values[0])),
-      '案件ID':         id,
-      '案件名':         name,
-      '機関':           r.values[4],
-      '機関所在地':     r.values[5],
-      '施工場所':       placeOverrides[r._rowId]||r.values[6],
-      '落札日(契約日)': date,
-      '落札価格(税抜)': price,
-      '年度':           dateToFiscalYear(date),
-      '入札形式':       r.values[2],
-      '入札資格':       r.values[9],
-      '追加元':         r._file||'案件一覧',
-    });
-    added++;
+
+  // 既存の分析データ（mktList）と案件名の類似度を照合
+  const candidates = newItems.map(r=>{
+    const title = normalizeTitleForDup(r.values[3]);
+    const sim = findMostSimilarMktItem(title);
+    return { row:r, matchPct: sim.pct, matchItem: sim.item };
   });
-  saveMktList();
-  updateMktCount();
-  showToast('✓ ' + added + '件を分析データに追加しました');
+
+  openMktPushReviewModal(candidates, targets.length);
+}
+
+// ═══ 分析データ追加レビュー・モーダル（既存mktListとの類似案件を対比・判定） ═══
+function openMktPushReviewModal(candidates, totalTargetCount){
+  const overlay = document.createElement('div');
+  overlay.id = 'mkt-push-review-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;max-width:1020px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
+
+  const simCount = candidates.filter(c=>c.matchItem).length;
+  const simMsg = simCount>0
+    ? `<div style="font-size:12px;color:var(--yellow);margin-top:4px">⚠ 既存の分析データ（各社受注案件リスト）と案件名が一致・類似する案件が ${simCount} 件あります。行をクリックすると対比表示できます。</div>`
+    : '';
+
+  box.innerHTML = `
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:700;color:var(--text)">📊 分析データに追加（対象市場 ${totalTargetCount}件中 新規 ${candidates.length}件）</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">既存データと照合し、案件ごとに「新規追加」「既存と入替」「スキップ」を選べます。</div>
+      ${simMsg}
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="mkt-push-select-all" style="font-size:11px;padding:4px 10px">全て追加</button>
+        <button class="btn" id="mkt-push-select-none" style="font-size:11px;padding:4px 10px">全て解除</button>
+        <span style="font-size:10px;color:var(--text-muted)">🔴90%以上＝要確認　🟡70〜89%　⚪69%以下・一致なし</span>
+        <span style="font-size:12px;color:var(--accent);margin-left:auto;align-self:center" id="mkt-push-count">${candidates.length} 件選択中</span>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:0 20px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:var(--surface);z-index:1">
+          <tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:8px 6px;width:34px"></th>
+            <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:60px">類似度</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">受注会社</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">案件名</th>
+            <th style="padding:8px 6px;text-align:right;color:var(--text-muted);font-size:10px">落札価格</th>
+            <th style="padding:8px 6px;text-align:left;color:var(--text-muted);font-size:10px">落札日</th>
+            <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:190px">判定</th>
+            <th style="padding:8px 6px;text-align:center;color:var(--text-muted);font-size:10px;width:70px">集計除外</th>
+            <th style="padding:8px 6px;width:50px"></th>
+          </tr>
+        </thead>
+        <tbody id="mkt-push-tbody"></tbody>
+      </table>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="mkt-push-cancel">キャンセル</button>
+      <button class="btn btn-primary" id="mkt-push-confirm">選択した内容で反映する</button>
+    </div>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  const tbody = box.querySelector('#mkt-push-tbody');
+  const checkedState = {};
+  const rowModes = {}; // 'add' | 'replace' | 'skip'
+  const excludeState = {}; // true='集計除外（特殊案件）'として追加
+  candidates.forEach((c,idx)=>{ checkedState[idx]=true; rowModes[idx] = 'add'; excludeState[idx] = false; });
+
+  function updateCount(){
+    const n = Object.keys(checkedState).filter(i=>checkedState[i] && rowModes[i]!=='skip').length;
+    box.querySelector('#mkt-push-count').textContent = n+' 件選択中';
+  }
+
+  function modeButtonHtml(idx, hasMatch){
+    if(!hasMatch){
+      return `<span style="font-size:10px;color:var(--text-muted)">新規追加</span>`;
+    }
+    const modes = [['add','＋追加','var(--accent)','var(--accent2)'],['replace','⇄入替','var(--red)','rgba(255,95,126,0.2)'],['skip','－スキップ','var(--text-muted)','transparent']];
+    return `<div class="mkt-push-mode-toggle" data-idx="${idx}" style="display:flex;gap:3px;justify-content:center">`
+      + modes.map(([m,label,color,bg])=>{
+          const active = rowModes[idx]===m;
+          return `<button type="button" class="mkt-push-mode-btn" data-idx="${idx}" data-mode="${m}"
+            style="font-size:9px;padding:3px 6px;border-radius:10px;border:1px solid ${active?color:'var(--border)'};background:${active?bg:'transparent'};color:${active?color:'var(--text-muted)'};cursor:pointer">${label}</button>`;
+        }).join('')
+      + `</div>`;
+  }
+
+  function renderRows(){
+    tbody.innerHTML = '';
+    // 類似度が高い順（要確認案件を上に）
+    const order = candidates.map((c,idx)=>idx).sort((a,b)=>(candidates[b].matchPct||0)-(candidates[a].matchPct||0));
+    order.forEach(idx=>{
+      const c = candidates[idx];
+      const row = c.row.values;
+      const pct = Math.round((c.matchPct||0)*100);
+      const pctColor = pct>=90 ? 'var(--red)' : (pct>=70 ? 'var(--yellow)' : 'var(--text-muted)');
+      const priceNum = parseFloat(String(row[12]).replace(/[^0-9.-]/g,''))||0;
+
+      const tr = document.createElement('tr');
+      tr.style.cssText = 'border-bottom:1px solid var(--border);cursor:pointer';
+      tr.dataset.idx = idx;
+      if(rowModes[idx]==='replace') tr.style.background='rgba(255,95,126,0.06)';
+      if(rowModes[idx]==='skip') tr.style.opacity='0.45';
+
+      tr.innerHTML = `
+        <td style="padding:6px"><input type="checkbox" class="mkt-push-check" data-idx="${idx}" ${checkedState[idx]?'checked':''}></td>
+        <td style="padding:6px;text-align:center;font-weight:700;color:${pctColor}">${c.matchItem ? pct+'%' : '－'}</td>
+        <td style="padding:6px;color:var(--text)">${esc(row[0]||'')}</td>
+        <td style="padding:6px;color:var(--text)">${esc(row[3]||'')}</td>
+        <td style="padding:6px;text-align:right;color:var(--yellow);white-space:nowrap">${priceNum?priceNum.toLocaleString():''}</td>
+        <td style="padding:6px;color:var(--text-muted);white-space:nowrap">${esc(row[11]||'')}</td>
+        <td style="padding:6px">${modeButtonHtml(idx, !!c.matchItem)}</td>
+        <td style="padding:6px;text-align:center" title="チェックすると各社受注案件リストには表示されますが、他の集計・分析タブからは除外されます">
+          <input type="checkbox" class="mkt-push-exclude" data-idx="${idx}" ${excludeState[idx]?'checked':''}>
+        </td>
+        <td style="padding:6px;text-align:center">${c.matchItem ? '<span style="color:var(--accent);font-size:11px">🔍対比</span>' : ''}</td>
+      `;
+      tbody.appendChild(tr);
+
+      if(c.matchItem){
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'mkt-push-detail';
+        detailTr.style.display = 'none';
+        const mi = c.matchItem;
+        const field = (label, newVal, oldVal) => {
+          const diff = String(newVal||'') !== String(oldVal||'');
+          return `<tr>
+            <td style="padding:4px 8px;color:var(--text-muted);font-size:11px;white-space:nowrap">${label}</td>
+            <td style="padding:4px 8px;font-size:11px;color:var(--text);background:${diff?'rgba(0,200,255,0.08)':'transparent'}">${esc(newVal||'')}</td>
+            <td style="padding:4px 8px;font-size:11px;color:var(--text);background:${diff?'rgba(255,95,126,0.08)':'transparent'}">${esc(oldVal||'')}</td>
+          </tr>`;
+        };
+        detailTr.innerHTML = `
+          <td colspan="9" style="padding:10px 20px;background:var(--surface2)">
+            <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:6px">📋 案件対比（類似度 ${pct}%）</div>
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <td style="padding:4px 8px;width:120px"></td>
+                <td style="padding:4px 8px;font-size:10px;color:var(--accent);font-weight:700">案件仕訳（今回追加分）</td>
+                <td style="padding:4px 8px;font-size:10px;color:var(--red);font-weight:700">既存の分析データ</td>
+              </tr></thead>
+              <tbody>
+                ${field('受注会社', row[0], mi['受注会社'])}
+                ${field('案件名', row[3], mi['案件名'])}
+                ${field('機関', row[4], mi['機関'])}
+                ${field('施工場所', placeOverrides[c.row._rowId]||row[6], mi['施工場所'])}
+                ${field('落札日(契約日)', row[11], mi['落札日(契約日)'])}
+                ${field('落札価格', row[12], mi['落札価格(税抜)'])}
+              </tbody>
+            </table>
+          </td>`;
+        tbody.appendChild(detailTr);
+
+        tr.addEventListener('click', e=>{
+          if(e.target.closest('.mkt-push-check') || e.target.closest('.mkt-push-mode-btn') || e.target.closest('.mkt-push-exclude')) return;
+          detailTr.style.display = detailTr.style.display==='none' ? '' : 'none';
+        });
+      }
+    });
+    updateCount();
+  }
+
+  tbody.addEventListener('change', e=>{
+    if(e.target.classList.contains('mkt-push-check')){
+      checkedState[e.target.dataset.idx] = e.target.checked;
+      updateCount();
+    }
+    if(e.target.classList.contains('mkt-push-exclude')){
+      excludeState[e.target.dataset.idx] = e.target.checked;
+    }
+  });
+  tbody.addEventListener('click', e=>{
+    const btn = e.target.closest('.mkt-push-mode-btn');
+    if(!btn) return;
+    rowModes[btn.dataset.idx] = btn.dataset.mode;
+    renderRows();
+  });
+
+  renderRows();
+
+  box.querySelector('#mkt-push-select-all').addEventListener('click', ()=>{
+    candidates.forEach((c,idx)=>{ checkedState[idx]=true; });
+    box.querySelectorAll('.mkt-push-check').forEach(cb=>cb.checked=true);
+    updateCount();
+  });
+  box.querySelector('#mkt-push-select-none').addEventListener('click', ()=>{
+    candidates.forEach((c,idx)=>{ checkedState[idx]=false; });
+    box.querySelectorAll('.mkt-push-check').forEach(cb=>cb.checked=false);
+    updateCount();
+  });
+  box.querySelector('#mkt-push-cancel').addEventListener('click', ()=>{
+    document.body.removeChild(overlay);
+  });
+  box.querySelector('#mkt-push-confirm').addEventListener('click', ()=>{
+    let added=0, replaced=0, skipped=0, excluded=0;
+    candidates.forEach((c,idx)=>{
+      if(!checkedState[idx] || rowModes[idx]==='skip'){ skipped++; return; }
+      const r = c.row;
+      const id    = r.values[1];
+      const name  = r.values[3];
+      const price = Math.round(parseFloat((r.values[12]||'').replace(/[^0-9.-]/g,''))||0);
+      const date  = r.values[11];
+      if(rowModes[idx]==='replace' && c.matchItem){
+        // 既存の一致案件は mktList / mktListExcluded のどちらにあっても探して削除
+        let mIdx = mktList.indexOf(c.matchItem);
+        if(mIdx>=0){ mktList.splice(mIdx,1); }
+        else {
+          mIdx = mktListExcluded.indexOf(c.matchItem);
+          if(mIdx>=0) mktListExcluded.splice(mIdx,1);
+        }
+        replaced++;
+      }
+      const newEntry = {
+        '受注会社':       toShortCompanyName(normalizeCompany(r.values[0])),
+        '案件ID':         id,
+        '案件名':         name,
+        '機関':           r.values[4],
+        '機関所在地':     r.values[5],
+        '施工場所':       placeOverrides[r._rowId]||r.values[6],
+        '落札日(契約日)': date,
+        '落札価格(税抜)': price,
+        '年度':           dateToFiscalYear(date),
+        '入札形式':       r.values[2],
+        '入札資格':       r.values[9],
+        '追加元':         r._file||'案件一覧',
+      };
+      if(excludeState[idx]){
+        // 集計除外（特殊案件）：各社受注案件リストには表示するが、他の集計・分析タブには含めない
+        newEntry['集計除外'] = true;
+        mktListExcluded.push(newEntry);
+        excluded++;
+      } else {
+        mktList.push(newEntry);
+      }
+      added++;
+    });
+    saveMktList();
+    saveMktListExcluded();
+    updateMktCount();
+    document.body.removeChild(overlay);
+    const parts = [added+'件を追加'];
+    if(replaced>0) parts.push(replaced+'件は既存と入替');
+    if(excluded>0) parts.push(excluded+'件は集計除外（特殊案件）として登録');
+    if(skipped>0) parts.push(skipped+'件はスキップ');
+    showToast('✓ ' + parts.join('／'));
+  });
 }
 // ═══ 起動処理はFirebase同期完了後（_initApp内）に実行する ═══
 // （DOMContentLoaded時点ではFirebaseからのデータ取得が完了していないため、
@@ -2997,12 +3253,14 @@ function pushToMktList(){
 });
 
 function hardResetMkt(){
-  if(!confirm('市場分析データを完全リセットします。\nPAST_MKT_DATA（5,832件）で再初期化します。よろしいですか？')) return;
+  if(!confirm('市場分析データを完全リセットします。\nPAST_MKT_DATA（5,832件）で再初期化します。\n※集計除外（特殊案件）リストも削除されます。よろしいですか？')) return;
   LS.remove(MKT_LIST_KEY);
   LS.remove('njss_mkt_cleared');
   LS.remove(MKT_LIST_KEY+'_cleared');
+  LS.remove(MKT_EXCLUDED_KEY);
   // PAST_MKT_DATAで再初期化
   mktList = PAST_MKT_DATA.map(d=>Object.assign({},d));
+  mktListExcluded = [];
   updateMktCount();
   showToast('✓ 市場分析データをリセットしました（5,832件）');
 }
@@ -3022,10 +3280,12 @@ function clearMktData(){
   );
   if(!choice) return;
   mktList=[];
+  mktListExcluded=[];
   try{
     LS.set('njss_mkt_cleared', '1');
     LS.set(MKT_LIST_KEY+'_cleared', '1');
     LS.remove(MKT_LIST_KEY);
+    LS.remove(MKT_EXCLUDED_KEY);
   }catch(e){}
   updateMktCount();
   showToast('🗑 市場分析リストを完全クリアしました');
@@ -5576,7 +5836,7 @@ function getCaselistData(){
   const co  = (document.getElementById('caselist-company-select')||{}).value || '';
   const kw  = ((document.getElementById('caselist-search')||{}).value || '').toLowerCase();
 
-  return mktList.filter(r=>{
+  return [...mktList, ...mktListExcluded].filter(r=>{
     if(co && r['受注会社'] !== co) return false;
     if(kw){
       const hay = [r['案件名'],r['機関'],r['施工場所'],r['入札資格'],r['受注会社']].join(' ').toLowerCase();
@@ -5660,11 +5920,14 @@ function renderCaseList(){
 
   tbody.innerHTML = page.map(r=>{
     const co = r['受注会社']||'';
+    const excludedBadge = r['集計除外']
+      ? '<span style="display:inline-block;margin-right:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4)" title="この案件は各社受注案件リストにのみ表示され、他の集計・分析タブには含まれません">集計除外</span>'
+      : '';
     return '<tr>'
       +'<td class="col-company" title="'+esc(co)+'">'+esc(co)+'</td>'
       +'<td class="col-id">'+esc(r['案件ID']||'')+'</td>'
       +'<td>'+getBadge(r['入札形式']||'')+'</td>'
-      +'<td class="col-name" title="'+esc(r['案件名']||'')+'">'+esc(r['案件名']||'')+'</td>'
+      +'<td class="col-name" title="'+esc(r['案件名']||'')+'">'+excludedBadge+esc(r['案件名']||'')+'</td>'
       +'<td title="'+esc(r['機関']||'')+'">'+esc(r['機関']||'')+'</td>'
       +'<td>'+esc(r['施工場所']||'')+'</td>'
       +'<td>'+esc(r['案件公示日']||'')+'</td>'
