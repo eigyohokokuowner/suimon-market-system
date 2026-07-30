@@ -1713,6 +1713,8 @@ function _initApp(){
   const loginIdEl = document.getElementById('login-id');
   if(loginIdEl) loginIdEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); attemptLogin(); } });
   // ログイン状態の確認（未ログインならログイン画面を表示、ログイン済みなら権限制御を適用）
+  // Firebase同期完了後の一度きりのタイミングで、本当にアカウントが皆無の場合のみ初期シードを保存する
+  ensureDefaultAccountSeeded();
   checkLoginState();
 
   // ═══ データ初期化（Firebase同期完了後に実行） ══════════
@@ -2474,6 +2476,10 @@ function showToast(msg,warn=false){
 const ACCOUNTS_KEY = 'njss_accounts';       // Firebase同期対象（njss_プレフィックス）
 const SESSION_KEY   = 'sma_login_session';  // sessionStorage使用：タブ/ブラウザを閉じたら消える（都度ログイン）
 
+// アカウント一覧を読み込む（読み取り専用：データが無くても自動保存はしない）
+// ※以前、Firebase同期の一時的なタイミングのズレでローカルのアカウントデータが
+//   空に見えた瞬間に自動保存してしまい、Firebase側の正しいデータを
+//   上書き・消失させてしまう不具合があったため、保存処理は完全に分離した。
 function loadAccounts(){
   let accounts;
   try{
@@ -2481,14 +2487,27 @@ function loadAccounts(){
     accounts = raw ? JSON.parse(raw) : null;
   }catch(e){ accounts = null; }
   if(!accounts || !Array.isArray(accounts) || accounts.length===0){
-    // 初期アカウントをシード
-    accounts = [{ id:'kkawate', pass:'980109', role:'edit' }];
-    saveAccounts(accounts);
+    // データが見つからない場合、ログイン判定用にデフォルト値をメモリ上でのみ返す（保存はしない）
+    return [{ id:'kkawate', pass:'980109', role:'edit' }];
   }
   return accounts;
 }
 function saveAccounts(accounts){
   try{ LS.set(ACCOUNTS_KEY, JSON.stringify(accounts)); }catch(e){}
+}
+// アプリ起動時に一度だけ実行：本当にFirebase・ローカルどちらにもアカウントが
+// 1件も存在しない場合（＝このシステムを誰も一度も使ったことがない場合）のみ、
+// 初期アカウントを実際に保存する。
+let _accountsSeedChecked = false;
+function ensureDefaultAccountSeeded(){
+  if(_accountsSeedChecked) return;
+  _accountsSeedChecked = true;
+  try{
+    const raw = LS.get(ACCOUNTS_KEY);
+    const accounts = raw ? JSON.parse(raw) : null;
+    if(accounts && Array.isArray(accounts) && accounts.length>0) return; // 既にデータがあれば何もしない
+  }catch(e){}
+  saveAccounts([{ id:'kkawate', pass:'980109', role:'edit' }]);
 }
 function getCurrentUser(){
   try{
