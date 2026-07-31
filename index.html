@@ -1389,16 +1389,44 @@ function saveMktData(){
 }
 
 function setDate(rid, val){
-  // YYYY-MM-DD → YYYY/MM/DD に変換して保存
+  // YYYY-MM-DD（date inputの形式） → YYYY/MM/DD に変換して保存
   const formatted = val ? val.replace(/-/g,'/') : '';
-  if(formatted){
-    dateOverrides[rid] = formatted;
-    // valuesにも反映
-    const row = allData.find(r=>r._rowId===rid);
-    if(row) row.values[11] = formatted;
-  } else {
-    delete dateOverrides[rid];
-  }
+  const row = allData.find(r=>r._rowId===rid);
+  if(row) row.values[11] = formatted;
+  saveAddedData();
+}
+
+// "YYYY/MM/DD" 等の内部表記を <input type="date"> 用の "YYYY-MM-DD" に変換
+function dateToInputVal(d){
+  if(!d) return '';
+  const s = String(d).trim();
+  const m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if(!m) return '';
+  return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+}
+
+// 機関所在地・施工場所 共通：都道府県プルダウンを生成（変更時に指定した関数を呼ぶ）
+function makePrefSelect(rid, current, setterFnName){
+  const opts = ['（空欄）',...PREF_LIST].map(p=>{
+    const sel = p===current||(p==='（空欄）'&&!current)?'selected':'';
+    return '<option value="'+(p==='（空欄）'?'':p)+'" '+sel+'>'+p+'</option>';
+  }).join('');
+  const isEmpty = !current;
+  const selectStyle = isEmpty ? 'color:var(--red)' : '';
+  return '<select class="place-select" data-rid="'+esc(rid)+'" style="'+selectStyle+'" onchange="'+setterFnName+'(this.dataset.rid,this.value);this.style.color=this.value?\'\':\'var(--red)\';this.title=this.value" title="'+esc(current)+'">'+opts+'</select>';
+}
+
+// 施工場所を直接編集（row.valuesに保存するため、リロードしても値が保持される）
+function setPlace(rid, val){
+  const row = allData.find(r=>r._rowId===rid);
+  if(row) row.values[6] = val;
+  saveAddedData();
+}
+
+// 機関所在地を直接編集
+function setOrgLocation(rid, val){
+  const row = allData.find(r=>r._rowId===rid);
+  if(row) row.values[5] = val;
   saveAddedData();
 }
 
@@ -1434,6 +1462,37 @@ function cycleMkt(mkey, btnEl){
 }
 
 const PREF_LIST = ["北海道", "青森県", "岩手県", "宮城県", "秋田県", "山形県", "福島県", "茨城県", "栃木県", "群馬県", "埼玉県", "千葉県", "東京都", "神奈川県", "新潟県", "富山県", "石川県", "福井県", "山梨県", "長野県", "岐阜県", "静岡県", "愛知県", "三重県", "滋賀県", "京都府", "大阪府", "兵庫県", "奈良県", "和歌山県", "鳥取県", "島根県", "岡山県", "広島県", "山口県", "徳島県", "香川県", "愛媛県", "高知県", "福岡県", "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"];
+
+// 機関名に都道府県名が含まれていれば抽出する（例：「〇〇県庁」「〇〇県土木事務所」→「〇〇県」）
+function extractPrefFromOrg(org){
+  if(!org) return null;
+  const s = String(org);
+  for(const pref of PREF_LIST){
+    if(s.includes(pref)) return pref;
+  }
+  return null;
+}
+
+// 施工場所が空欄で、機関名に都道府県名が含まれる場合は自動補完する
+function autoFillPlaceFromOrg(orgVal, placeVal){
+  if(placeVal) return placeVal; // 既に値があれば変更しない
+  return extractPrefFromOrg(orgVal) || placeVal;
+}
+
+// 既存の案件仕訳データ（allData）を対象に、施工場所が空欄の案件を
+// 機関名から自動補完する（起動時に一度実行）
+function repairEmptyPlaceFromOrg(){
+  let fixed = 0;
+  allData.forEach(r=>{
+    const v = r.values;
+    if(!v[6]){
+      const pref = extractPrefFromOrg(v[4]);
+      if(pref){ v[6] = pref; fixed++; }
+    }
+  });
+  if(fixed > 0) saveAddedData();
+  return fixed;
+}
 
 function makePlaceSelect(rid, current){
   const opts = ['（空欄）',...PREF_LIST].map(p=>{
@@ -1726,6 +1785,7 @@ function _initApp(){
   loadEmbedded();
   loadSavedData();
   migrateMktStatusKeys(); // 旧形式（_rowIdキー）の市場区分データを案件IDキーへ移行
+  repairEmptyPlaceFromOrg(); // 既存データの施工場所が空欄なら機関名から自動補完
   updateStats();
   applyFilters();
   renderFileChips();
@@ -1852,6 +1912,8 @@ async function handleFiles(files, isHK){
       const row = mapRow(r, colIdx);
       // 落札会社名を正規のトラッキング対象社名に正規化（表記ゆれ・支店表記等を統一）
       row[0] = normalizeCompany(row[0]);
+      // 施工場所が空欄で機関名に都道府県が含まれる場合は自動補完
+      row[6] = autoFillPlaceFromOrg(row[4], row[6]);
       // HK CSV固有処理
       if(isHK){
         // 落札日正規化: 「2026年 4月17日」→「2026/04/17」
@@ -2313,7 +2375,6 @@ function renderTable(){
     const mk=mktKey(row);
     const mkt=marketStatus[mk]||'未設定';
     const mktCls=mkt==='対象市場'?'mkt-target':mkt==='対象外市場'?'mkt-out':'mkt-none';
-    const placeVal=placeOverrides[rid]||v[6];
     const isToyokuni = (v[0]==='豊国工業' || v[0]==='豊国（下請）');
     const companyCell = isToyokuni
       ? '<select class="toyokuni-select" data-rid="'+esc(rid)+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--green);font-size:12px;padding:3px 4px;cursor:pointer" onchange="setToyokuniType(this.dataset.rid,this.value)">'
@@ -2321,19 +2382,22 @@ function renderTable(){
           +'<option value="豊国（下請）"'+(v[0]==='豊国（下請）'?' selected':'')+'>豊国（下請）</option>'
         +'</select>'
       : '<span title="'+esc(v[0])+'">'+esc(v[0])+'</span>';
+    // 機関所在地・施工場所は都道府県プルダウン（クリックで変更→row.valuesに直接保存）
+    const orgLocSelect = makePrefSelect(rid, v[5], 'setOrgLocation');
+    const placeSelect = makePrefSelect(rid, v[6], 'setPlace');
     return '<tr>'
       +'<td style="padding:6px 8px"><button class="mkt-btn '+mktCls+'" data-rid="'+esc(mk)+'" onclick="cycleMkt(this.dataset.rid, this)">'+esc(mkt)+'</button></td>'
       +'<td class="col-company">'+companyCell+'</td>'
       +'<td class="col-id">'+esc(v[1])+'</td>'
       +'<td class="col-name" title="'+esc(v[3])+'">'+esc(v[3])+'</td>'
       +'<td><input type="text" class="org-edit-input" style="background:transparent;border:1px solid transparent;border-radius:4px;color:var(--text);font-size:12px;padding:3px 6px;width:100%;box-sizing:border-box" value="'+esc(v[4])+'" title="クリックして機関名を編集" onfocus="this.style.background=\'var(--surface2)\';this.style.borderColor=\'var(--accent)\'" onblur="this.style.background=\'transparent\';this.style.borderColor=\'transparent\'" onchange="setOrg(\''+rid+'\',this.value)"></td>'
-      +'<td>'+esc(v[5])+'</td>'
-      +'<td><div class="place-cell">'+makePlaceSelect(rid,placeVal)+'</div></td>'
+      +'<td><div class="place-cell">'+orgLocSelect+'</div></td>'
+      +'<td><div class="place-cell">'+placeSelect+'</div></td>'
       +'<td>'+esc(v[7])+'</td>'
       +'<td>'+esc(v[8])+'</td>'
       +'<td title="'+esc(v[9])+'">'+classifyShikaku(v[3],v[9])+'</td>'
       +'<td title="'+esc(v[10])+'">'+esc(v[10])+'</td>'
-      +(v[11]?'<td>'+esc(v[11])+'</td>':'<td><input type="date" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;width:110px" value="'+(dateOverrides[rid]||'')+'" onchange="setDate(\''+rid+'\',this.value)"></td>')
+      +'<td><input type="date" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;padding:2px 4px;width:110px" value="'+dateToInputVal(v[11])+'" onchange="setDate(\''+rid+'\',this.value)"></td>'
       +'<td class="price">'+fmtPrice(v[12],false)+'</td>'
       +'<td class="price price-planned">'+fmtPrice(v[13],false)+'</td>'
       +'</tr>';
@@ -2853,7 +2917,7 @@ function syncMktFromCurrent(){
     if(id && mktList.find(m=>m['案件ID']===id)) return;
     const price=Math.round((parseFloat(r.values[12].replace(/[^0-9.-]/g,''))||0));
     const date=r.values[11];
-    mktList.push({'受注会社':toShortCompanyName(normalizeCompany(r.values[0])),'案件ID':id,'案件名':name,'機関':r.values[4],'機関所在地':r.values[5],'施工場所':placeOverrides[r._rowId]||r.values[6],'落札日(契約日)':date,'落札価格(税抜)':price,'年度':dateToFiscalYear(date),'入札形式':r.values[2],'入札資格':r.values[9],'追加元':r._file});
+    mktList.push({'受注会社':toShortCompanyName(normalizeCompany(r.values[0])),'案件ID':id,'案件名':name,'機関':r.values[4],'機関所在地':r.values[5],'施工場所':r.values[6],'落札日(契約日)':date,'落札価格(税抜)':price,'年度':dateToFiscalYear(date),'入札形式':r.values[2],'入札資格':r.values[9],'追加元':r._file});
     added++;
   });
   if(added>0) saveMktList();
@@ -3162,7 +3226,7 @@ function openMktPushReviewModal(candidates, totalTargetCount){
                 ${field('受注会社', row[0], mi['受注会社'])}
                 ${field('案件名', row[3], mi['案件名'])}
                 ${field('機関', row[4], mi['機関'])}
-                ${field('施工場所', placeOverrides[c.row._rowId]||row[6], mi['施工場所'])}
+                ${field('施工場所', row[6], mi['施工場所'])}
                 ${field('落札日(契約日)', row[11], mi['落札日(契約日)'])}
                 ${field('落札価格', row[12], mi['落札価格(税抜)'])}
               </tbody>
@@ -3235,7 +3299,7 @@ function openMktPushReviewModal(candidates, totalTargetCount){
         '案件名':         name,
         '機関':           r.values[4],
         '機関所在地':     r.values[5],
-        '施工場所':       placeOverrides[r._rowId]||r.values[6],
+        '施工場所':       r.values[6],
         '落札日(契約日)': date,
         '落札価格(税抜)': price,
         '年度':           dateToFiscalYear(date),
