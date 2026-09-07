@@ -348,16 +348,25 @@
 
     onValue(accountsRef, (snap)=>{
       if(snap.exists()){
-        window._accountsCache = snap.val();
-        window._accountsCacheReady = true;
-        document.dispatchEvent(new Event('accounts-ready'));
-        if(window._onAccountsUpdate) window._onAccountsUpdate();
-      } else if(!_accountsSeedAttempted){
-        // Firebase側に本当に1件も存在しないことが確定した場合のみ、初期アカウントを書き込む
+        let val = snap.val();
+        // 旧バージョンではJSON文字列として保存されていたため、文字列ならパースして復元する
+        if(typeof val === 'string'){
+          try{ val = JSON.parse(val); }catch(e){ val = null; }
+        }
+        if(Array.isArray(val) && val.length > 0){
+          window._accountsCache = val;
+          window._accountsCacheReady = true;
+          document.dispatchEvent(new Event('accounts-ready'));
+          if(window._onAccountsUpdate) window._onAccountsUpdate();
+          return;
+        }
+      }
+      // ここに到達するのは「本当にデータがない」、または「配列として復元できない壊れたデータ」の場合のみ
+      if(!_accountsSeedAttempted){
         _accountsSeedAttempted = true;
         set(accountsRef, DEFAULT_ACCOUNTS).catch(e=>console.warn('[SMA] アカウント初期シード書込エラー:', e));
         // ここではcacheを更新しない。set()成功後に再度onValueが発火し、
-        // 上のif(snap.exists())分岐で正しく反映される。
+        // 上のif(Array.isArray(val)...)分岐で正しく反映される。
       }
     }, (err)=>{
       console.warn('[SMA] アカウント同期エラー:', err);
