@@ -254,7 +254,7 @@
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, get, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, get, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyChy40L3M3NDEDdpJy-LT_qUJZG366ISzs",
@@ -280,6 +280,7 @@
         if(val !== null && val !== undefined){
           // Firebase上のキー名（_→元の文字）に戻して保存
           const realKey = key.replace(/__DOT__/g,'.').replace(/__HASH__/g,'#');
+          if(realKey === 'njss_accounts') return; // アカウント情報はローカルに一切保存しない（Firebaseのみが正データ）
           localStorage.setItem(realKey, typeof val==='string' ? val : JSON.stringify(val));
         }
       });
@@ -304,7 +305,7 @@
           applyFirebaseData(snap.val());
         } else {
           // Firebaseが空の場合：localStorageのnjss_データをFirebaseに書き込む（初回移行）
-          const localKeys = Object.keys(localStorage).filter(k=>k.startsWith('njss_'));
+          const localKeys = Object.keys(localStorage).filter(k=>k.startsWith('njss_') && k!=='njss_accounts');
           if(localKeys.length > 0){
             const updates = {};
             localKeys.forEach(k=>{
@@ -332,6 +333,56 @@
       applyFirebaseData(snap.exists() ? snap.val() : null);
       if(window._onFirebaseUpdate) window._onFirebaseUpdate();
     });
+
+    // ── アカウント管理：Firebaseのみを正データとする専用同期 ──────────
+    // ・ローカルストレージには一切保存しない（キャッシュも持たない）
+    // ・「Firebaseに1件もない」と判断するのは、実際にFirebaseへの読み込みが
+    //   確定した時（onValueのコールバックが実際に発火した時）だけ。
+    //   通信タイムアウトや読み込み中を「空」と誤認して上書きすることはない。
+    const accountsRef = ref(db, DB_PATH + '/njss_accounts');
+    const DEFAULT_ACCOUNTS = [{ id:'kkawate', pass:'980109', role:'edit' }];
+    let _accountsSeedAttempted = false;
+
+    window._accountsCache = null;        // Firebaseから確定取得できた最新のアカウント一覧
+    window._accountsCacheReady = false;  // 一度でも確定した読み込みが完了したか
+
+    onValue(accountsRef, (snap)=>{
+      if(snap.exists()){
+        window._accountsCache = snap.val();
+        window._accountsCacheReady = true;
+        document.dispatchEvent(new Event('accounts-ready'));
+        if(window._onAccountsUpdate) window._onAccountsUpdate();
+      } else if(!_accountsSeedAttempted){
+        // Firebase側に本当に1件も存在しないことが確定した場合のみ、初期アカウントを書き込む
+        _accountsSeedAttempted = true;
+        set(accountsRef, DEFAULT_ACCOUNTS).catch(e=>console.warn('[SMA] アカウント初期シード書込エラー:', e));
+        // ここではcacheを更新しない。set()成功後に再度onValueが発火し、
+        // 上のif(snap.exists())分岐で正しく反映される。
+      }
+    }, (err)=>{
+      console.warn('[SMA] アカウント同期エラー:', err);
+    });
+
+    // 呼び出し側は「確定した」アカウント一覧が来るまで待つ（読み込み中を空と誤認しない）
+    window.fbWaitAccountsReady = function(timeoutMs){
+      if(window._accountsCacheReady) return Promise.resolve(window._accountsCache);
+      return new Promise((resolve, reject)=>{
+        const timer = setTimeout(()=>{
+          document.removeEventListener('accounts-ready', onReady);
+          reject(new Error('accounts load timeout'));
+        }, timeoutMs || 15000);
+        function onReady(){
+          clearTimeout(timer);
+          document.removeEventListener('accounts-ready', onReady);
+          resolve(window._accountsCache);
+        }
+        document.addEventListener('accounts-ready', onReady);
+      });
+    };
+    // アカウント一覧をFirebaseへ書き込む（失敗時は例外を投げる。黙って握りつぶさない）
+    window.fbSaveAccountsData = async function(accounts){
+      await set(accountsRef, accounts);
+    };
 
     initFromFirebase();
   </script>
@@ -1772,8 +1823,7 @@ function _initApp(){
   const loginIdEl = document.getElementById('login-id');
   if(loginIdEl) loginIdEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); attemptLogin(); } });
   // ログイン状態の確認（未ログインならログイン画面を表示、ログイン済みなら権限制御を適用）
-  // Firebase同期完了後の一度きりのタイミングで、本当にアカウントが皆無の場合のみ初期シードを保存する
-  ensureDefaultAccountSeeded();
+  // アカウントの初期シードは、Firebase側で「本当に0件」と確定した場合のみ自動的に行われる
   checkLoginState();
 
   // ═══ データ初期化（Firebase同期完了後に実行） ══════════
@@ -2537,41 +2587,16 @@ function showToast(msg,warn=false){
 
 
 // ═══ アカウント・ログイン管理 ══════════════════════════
-const ACCOUNTS_KEY = 'njss_accounts';       // Firebase同期対象（njss_プレフィックス）
-const SESSION_KEY   = 'sma_login_session';  // sessionStorage使用：タブ/ブラウザを閉じたら消える（都度ログイン）
+// アカウント情報はFirebaseのみを正データとして扱う。ローカルストレージには一切保存しない。
+const SESSION_KEY = 'sma_login_session';  // ログインセッションのみsessionStorage使用（タブ/ブラウザを閉じたら消える）
 
-// アカウント一覧を読み込む（読み取り専用：データが無くても自動保存はしない）
-// ※以前、Firebase同期の一時的なタイミングのズレでローカルのアカウントデータが
-//   空に見えた瞬間に自動保存してしまい、Firebase側の正しいデータを
-//   上書き・消失させてしまう不具合があったため、保存処理は完全に分離した。
-function loadAccounts(){
-  let accounts;
-  try{
-    const raw = LS.get(ACCOUNTS_KEY);
-    accounts = raw ? JSON.parse(raw) : null;
-  }catch(e){ accounts = null; }
-  if(!accounts || !Array.isArray(accounts) || accounts.length===0){
-    // データが見つからない場合、ログイン判定用にデフォルト値をメモリ上でのみ返す（保存はしない）
-    return [{ id:'kkawate', pass:'980109', role:'edit' }];
-  }
-  return accounts;
+// Firebaseから確定したアカウント一覧を取得する（読み込み中の場合は完了まで待つ）
+async function loadAccounts(){
+  return await window.fbWaitAccountsReady();
 }
-function saveAccounts(accounts){
-  try{ LS.set(ACCOUNTS_KEY, JSON.stringify(accounts)); }catch(e){}
-}
-// アプリ起動時に一度だけ実行：本当にFirebase・ローカルどちらにもアカウントが
-// 1件も存在しない場合（＝このシステムを誰も一度も使ったことがない場合）のみ、
-// 初期アカウントを実際に保存する。
-let _accountsSeedChecked = false;
-function ensureDefaultAccountSeeded(){
-  if(_accountsSeedChecked) return;
-  _accountsSeedChecked = true;
-  try{
-    const raw = LS.get(ACCOUNTS_KEY);
-    const accounts = raw ? JSON.parse(raw) : null;
-    if(accounts && Array.isArray(accounts) && accounts.length>0) return; // 既にデータがあれば何もしない
-  }catch(e){}
-  saveAccounts([{ id:'kkawate', pass:'980109', role:'edit' }]);
+// アカウント一覧をFirebaseへ保存する（ローカルには保存しない。失敗時は例外を投げる）
+async function saveAccounts(accounts){
+  await window.fbSaveAccountsData(accounts);
 }
 function getCurrentUser(){
   try{
@@ -2586,13 +2611,21 @@ function setCurrentUser(user){
   }catch(e){}
 }
 
-function attemptLogin(){
+async function attemptLogin(){
   const idVal = document.getElementById('login-id').value.trim();
   const passVal = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-error');
   errEl.textContent = '';
   if(!idVal || !passVal){ errEl.textContent = 'IDとパスワードを入力してください。'; return; }
-  const accounts = loadAccounts();
+  errEl.textContent = '確認中...';
+  let accounts;
+  try{
+    accounts = await loadAccounts();
+  }catch(e){
+    errEl.textContent = 'サーバーに接続できません。しばらくしてから再度お試しください。';
+    return;
+  }
+  errEl.textContent = '';
   const found = accounts.find(a=>a.id===idVal && a.pass===passVal);
   if(!found){ errEl.textContent = 'IDまたはパスワードが違います。'; return; }
   setCurrentUser({ id: found.id, role: found.role });
@@ -2639,11 +2672,19 @@ function logoutUser(){
 }
 
 // ログイン状態チェック（既存セッションが有効かどうかも検証）
-function checkLoginState(){
+async function checkLoginState(){
   const u = getCurrentUser();
   if(!u){ showLoginOverlay(); return; }
-  // セッションのアカウントが削除されていないか確認
-  const accounts = loadAccounts();
+  // セッションのアカウントが削除されていないか確認（Firebaseから確定データが取れるまで待つ）
+  let accounts;
+  try{
+    accounts = await loadAccounts();
+  }catch(e){
+    // 通信不良等で確認できない場合は、誤ってログアウトさせず現状のセッションのまま表示する
+    hideLoginOverlay();
+    applyRoleRestrictions();
+    return;
+  }
   const found = accounts.find(a=>a.id===u.id);
   if(!found){ setCurrentUser(null); showLoginOverlay(); return; }
   // 権限が途中で変更されている場合はセッション側も更新
@@ -2700,9 +2741,15 @@ function openAccountManageModal(){
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 
-  function renderAccountList(){
-    const accounts = loadAccounts();
+  async function renderAccountList(){
     const wrap = box.querySelector('#account-list-wrap');
+    let accounts;
+    try{
+      accounts = await loadAccounts();
+    }catch(e){
+      wrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">サーバーに接続できません。しばらくしてから開き直してください。</div>';
+      return;
+    }
     wrap.innerHTML = '';
     accounts.forEach((a,idx)=>{
       const row = document.createElement('div');
@@ -2723,11 +2770,17 @@ function openAccountManageModal(){
     });
 
     wrap.querySelectorAll('.acc-toggle-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', async ()=>{
         const i = parseInt(btn.dataset.idx);
-        const accs = loadAccounts();
+        let accs;
+        try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
         accs[i].role = accs[i].role==='edit' ? 'view' : 'edit';
-        saveAccounts(accs);
+        try{
+          await saveAccounts(accs);
+        }catch(e){
+          showToast('⚠ 保存に失敗しました。通信環境をご確認の上、再度お試しください', true);
+          return;
+        }
         // 自分自身の権限を変更した場合は即時反映
         const cu = getCurrentUser();
         if(cu && cu.id===accs[i].id) setCurrentUser({ id:accs[i].id, role:accs[i].role });
@@ -2737,9 +2790,10 @@ function openAccountManageModal(){
       });
     });
     wrap.querySelectorAll('.acc-delete-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', async ()=>{
         const i = parseInt(btn.dataset.idx);
-        const accs = loadAccounts();
+        let accs;
+        try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
         const editCount = accs.filter(a=>a.role==='edit').length;
         if(accs[i].role==='edit' && editCount<=1){
           showToast('⚠ 編集可能アカウントを最後の1件は削除できません', true);
@@ -2748,7 +2802,12 @@ function openAccountManageModal(){
         if(!confirm(accs[i].id+' を削除しますか？')) return;
         const deletedId = accs[i].id;
         accs.splice(i,1);
-        saveAccounts(accs);
+        try{
+          await saveAccounts(accs);
+        }catch(e){
+          showToast('⚠ 削除の保存に失敗しました。通信環境をご確認の上、再度お試しください', true);
+          return;
+        }
         renderAccountList();
         // 自分自身を削除した場合はログアウトさせる
         const cu = getCurrentUser();
@@ -2766,16 +2825,22 @@ function openAccountManageModal(){
   box.querySelector('#acc-close-btn').addEventListener('click', ()=>{
     document.body.removeChild(overlay);
   });
-  box.querySelector('#acc-add-btn').addEventListener('click', ()=>{
+  box.querySelector('#acc-add-btn').addEventListener('click', async ()=>{
     const idVal = box.querySelector('#acc-new-id').value.trim();
     const passVal = box.querySelector('#acc-new-pass').value;
     const isEdit = box.querySelector('#acc-new-edit').checked;
     if(!idVal){ showToast('IDを入力してください', true); return; }
     if(passVal.length<4){ showToast('パスワードは4文字以上にしてください', true); return; }
-    const accs = loadAccounts();
+    let accs;
+    try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
     if(accs.some(a=>a.id===idVal)){ showToast('そのIDは既に使用されています', true); return; }
     accs.push({ id:idVal, pass:passVal, role: isEdit?'edit':'view' });
-    saveAccounts(accs);
+    try{
+      await saveAccounts(accs);
+    }catch(e){
+      showToast('⚠ 保存に失敗しました。通信環境をご確認の上、再度お試しください', true);
+      return;
+    }
     box.querySelector('#acc-new-id').value='';
     box.querySelector('#acc-new-pass').value='';
     box.querySelector('#acc-new-edit').checked=false;
