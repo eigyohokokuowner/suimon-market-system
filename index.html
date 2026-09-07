@@ -11,7 +11,28 @@
     --accent:#00c8ff;--accent2:#0076a8;--accent-glow:rgba(0,200,255,0.15);
     --text:#e2eaf5;--text-muted:#6b8aaa;--green:#00e5a0;--yellow:#f5c842;
     --red:#ff5f7e;--row-hover:rgba(0,200,255,0.05);--header-bg:#0d1829;
+    --track-bg:rgba(255,255,255,.05);--legend-border:rgba(255,255,255,.2);
+    --highlight-outline:rgba(255,255,255,.3);--table-border:rgba(30,58,95,.4);
+    --table-th-bg:#0c1525;--highlight-row-bg:rgba(245,200,66,.05);
+    --total-row-bg:rgba(0,200,255,.06);--cur-col-bg:rgba(0,200,255,.04);
   }
+  /* ─── 画像出力用の白背景テーマ（資料貼り付け用）───────────── */
+  /* exportCardAsImage()実行時のみbodyに一時的に付与され、html2canvasでの */
+  /* キャプチャが終わったら自動的に外れる。ダークテーマ専用の色を白背景でも */
+  /* 見やすい配色に置き換えるだけで、レイアウトやロジックには影響しない。 */
+  body.export-light {
+    --bg:#ffffff;--surface:#ffffff;--surface2:#f4f6f9;--border:#d7dee6;
+    --accent:#0076a8;--accent2:#0090c8;--accent-glow:rgba(0,120,168,.08);
+    --text:#1a2634;--text-muted:#5a6b7d;--green:#0a8f63;--yellow:#9a7200;
+    --red:#b8283f;--row-hover:rgba(0,120,168,.05);--header-bg:#eef2f6;
+    --track-bg:rgba(0,0,0,.07);--legend-border:rgba(0,0,0,.3);
+    --highlight-outline:rgba(0,0,0,.3);--table-border:rgba(140,160,180,.5);
+    --table-th-bg:#eef2f6;--highlight-row-bg:rgba(245,180,0,.12);
+    --total-row-bg:rgba(0,118,168,.08);--cur-col-bg:rgba(0,118,168,.05);
+    background:#fff;
+  }
+  body.export-light::before{ display:none; } /* 背景のグリッド線を非表示 */
+  body.export-light .export-btn{ display:none !important; } /* 出力ボタン自体は画像に写さない */
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:13px;min-height:100vh;overflow-x:hidden;}
   body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,200,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
@@ -154,16 +175,16 @@
   @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
   /* 受注高比較表 */
   .trend-table{width:100%;border-collapse:collapse;font-size:11px;}
-  .trend-table th{background:#0c1525;border:1px solid var(--border);padding:7px 10px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-align:center;white-space:nowrap;}
+  .trend-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:7px 10px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-align:center;white-space:nowrap;}
   .trend-table th.col-co{text-align:left;min-width:120px;}
-  .trend-table td{border:1px solid rgba(30,58,95,.4);padding:6px 10px;font-family:'Consolas',monospace;font-size:11px;text-align:right;white-space:nowrap;}
+  .trend-table td{border:1px solid var(--table-border);padding:6px 10px;font-family:'Consolas',monospace;font-size:11px;text-align:right;white-space:nowrap;}
   .trend-table td.col-co{text-align:left;color:var(--text);font-family:system-ui,sans-serif;font-size:11px;font-weight:500;}
   .trend-table tr:hover td{background:var(--row-hover);}
-  .trend-table .row-highlight td{background:rgba(245,200,66,.05);}
+  .trend-table .row-highlight td{background:var(--highlight-row-bg);}
   .trend-table .row-highlight td.col-co{color:var(--yellow);font-weight:700;}
-  .trend-table .row-total td{background:rgba(0,200,255,.06);border-top:2px solid var(--accent);font-weight:700;color:var(--accent);}
+  .trend-table .row-total td{background:var(--total-row-bg);border-top:2px solid var(--accent);font-weight:700;color:var(--accent);}
   .trend-table .row-total td.col-co{font-family:system-ui,sans-serif;}
-  .trend-table .col-cur{background:rgba(0,200,255,.04);}
+  .trend-table .col-cur{background:var(--cur-col-bg);}
   .trend-table .col-total{color:var(--green);font-weight:700;}
   .trend-unit{font-size:10px;color:var(--text-muted);text-align:right;margin-bottom:6px;}
   /* 年度フィルターボタン */
@@ -173,15 +194,15 @@
   /* 機関別集計テーブル */
   .org-table-wrap{overflow-x:auto;margin-bottom:16px;}
   .org-table{border-collapse:collapse;font-size:11px;white-space:nowrap;}
-  .org-table th{background:#0c1525;border:1px solid var(--border);padding:5px 8px;color:var(--text-muted);font-weight:700;font-size:10px;letter-spacing:.5px;text-align:center;position:sticky;top:0;z-index:2;}
-  .org-table th.col-item{text-align:left;min-width:80px;position:sticky;left:0;z-index:3;background:#0c1525;}
-  .org-table td{border:1px solid rgba(30,58,95,.5);padding:4px 8px;color:var(--text);}
+  .org-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:5px 8px;color:var(--text-muted);font-weight:700;font-size:10px;letter-spacing:.5px;text-align:center;position:sticky;top:0;z-index:2;}
+  .org-table th.col-item{text-align:left;min-width:80px;position:sticky;left:0;z-index:3;background:var(--table-th-bg);}
+  .org-table td{border:1px solid var(--table-border);padding:4px 8px;color:var(--text);}
   .org-table td.col-item{color:var(--text-muted);font-weight:600;font-size:10px;background:var(--surface2);position:sticky;left:0;z-index:1;}
   .org-table td.num{font-family:'Consolas',monospace;text-align:right;font-size:10px;}
   .org-table td.cnt{color:var(--text-muted);font-size:10px;text-align:right;}
   .org-table tr:hover td{background:var(--row-hover);}
-  .org-table tr:hover td.col-item{background:#1a2235;}
-  .org-table .row-total td{background:rgba(0,200,255,.06);border-top:2px solid var(--accent);font-weight:700;}
+  .org-table tr:hover td.col-item{background:var(--surface2);}
+  .org-table .row-total td{background:var(--total-row-bg);border-top:2px solid var(--accent);font-weight:700;}
   .org-table .row-total td.num{color:var(--accent);}
   .org-co-header{background:var(--surface2)!important;border-bottom:2px solid var(--border)!important;color:var(--text)!important;font-size:10px!important;}
 
@@ -214,7 +235,7 @@
   .ana-bar-wrap{display:flex;flex-direction:column;gap:8px;}
   .ana-bar-row{display:grid;grid-template-columns:130px 1fr 90px;align-items:center;gap:8px;}
   .ana-bar-label{font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .ana-bar-track{height:10px;background:rgba(255,255,255,.05);border-radius:5px;overflow:hidden;}
+  .ana-bar-track{height:10px;background:var(--track-bg);border-radius:5px;overflow:hidden;}
   .ana-bar-fill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width .5s ease;}
   .ana-bar-val{font-family:monospace;font-size:10px;color:var(--text-muted);text-align:right;}
   /* 年度比較グラフ */
@@ -861,18 +882,22 @@
 
     <!-- 過去5年 受注高比較 -->
     <!-- 受注高比較表 -->
-    <div class="ana-card ana-grid-full" style="margin-bottom:16px">
+    <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-trend-table">
       <div class="ana-card-header">
         <div class="ana-card-title">📊 過去5年の受注高比較</div>
-        <div class="trend-unit">金額単位：円</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="trend-unit" style="margin-bottom:0">金額単位：円</div>
+          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-trend-table','過去5年の受注高比較')">🖼️ 画像保存(白背景)</button>
+        </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
         <div style="overflow-x:auto"><div id="trend-table-container"></div></div>
       </div>
     </div>
-    <div class="ana-card ana-grid-full" style="margin-bottom:16px">
+    <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-year-chart">
       <div class="ana-card-header">
         <div class="ana-card-title">📈 年度別 受注高推移（過去5年度）</div>
+        <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-year-chart','年度別受注高推移')">🖼️ 画像保存(白背景)</button>
       </div>
       <div class="ana-card-body">
         <div class="ana-year-chart" id="ana-year-chart"></div>
@@ -883,7 +908,7 @@
     </div>
 
     <!-- 年度別受注高ランキング -->
-    <div class="ana-card ana-grid-full" style="margin-bottom:16px">
+    <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-yearly-rank">
       <div class="ana-card-header" style="flex-wrap:wrap;gap:8px">
         <div class="ana-card-title">🏆 各社受注高比較</div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -893,7 +918,10 @@
           </select>
           <span id="yearly-rank-title" style="font-size:12px;color:var(--accent);font-weight:600"></span>
         </div>
-        <div class="trend-unit" style="margin-left:auto">金額単位：円</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
+          <div class="trend-unit" style="margin-bottom:0">金額単位：円</div>
+          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-yearly-rank','各社受注高比較')">🖼️ 画像保存(白背景)</button>
+        </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
         <div style="display:grid;grid-template-columns:1fr 240px;gap:16px;align-items:start">
@@ -2594,6 +2622,55 @@ function showToast(msg,warn=false){
   toastTimer=setTimeout(()=>t.classList.remove('show'),3500);
 }
 
+// ═══ グラフ・表の画像出力（白背景・資料貼り付け用） ══════════════
+// html2canvasは初回利用時にだけCDNから読み込む（未使用ユーザーの初期読み込みを軽くするため）
+function loadHtml2Canvas(){
+  if(window.html2canvas) return Promise.resolve();
+  if(window._html2canvasLoading) return window._html2canvasLoading;
+  window._html2canvasLoading = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('html2canvas読み込み失敗'));
+    document.head.appendChild(s);
+  });
+  return window._html2canvasLoading;
+}
+
+// 指定したカード要素を、白背景テーマに一時的に切り替えた上でPNG画像として保存する
+async function exportCardAsImage(selector, filename){
+  const target = document.querySelector(selector);
+  if(!target){ showToast('⚠ 出力対象が見つかりません', true); return; }
+
+  showToast('画像を生成しています…');
+  try{
+    await loadHtml2Canvas();
+  }catch(e){
+    showToast('⚠ 画像生成ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
+    return;
+  }
+
+  document.body.classList.add('export-light');
+  try{
+    // CSS変数切り替え後のレイアウト再計算を待ってからキャプチャする
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const canvas = await window.html2canvas(target, { backgroundColor:'#ffffff', scale:2, useCORS:true });
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename + '.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('✓ 画像を保存しました');
+  }catch(e){
+    console.warn('[SMA] 画像出力エラー:', e);
+    showToast('⚠ 画像の生成に失敗しました', true);
+  }finally{
+    document.body.classList.remove('export-light');
+  }
+}
+
 
 // ═══ アカウント・ログイン管理 ══════════════════════════
 // アカウント情報はFirebaseのみを正データとして扱う。ローカルストレージには一切保存しない。
@@ -3597,7 +3674,7 @@ function renderStackedBar(recent5){
   // 凡例
   const legend=recent5.map((fy,i)=>
     '<span style="display:inline-flex;align-items:center;gap:4px;margin-right:14px">'
-    +'<span style="display:inline-block;width:12px;height:12px;background:'+YEAR_COLORS[i]+';border-radius:2px;border:1px solid rgba(255,255,255,.2)"></span>'
+    +'<span style="display:inline-block;width:12px;height:12px;background:'+YEAR_COLORS[i]+';border-radius:2px;border:1px solid var(--legend-border)"></span>'
     +'<span style="font-size:11px;color:var(--text-muted)">'+toJpEra(fy)+'</span></span>'
   ).join('');
 
@@ -3616,7 +3693,7 @@ function renderStackedBar(recent5){
     const lbl='¥'+(Math.round(total)/100000000).toFixed(2)+'億';
     return '<div style="display:grid;grid-template-columns:140px 1fr 80px;align-items:center;gap:8px;margin-bottom:10px">'
       +'<div style="font-size:12px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+co+'">'+co+'</div>'
-      +'<div style="height:26px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden;display:flex">'
+      +'<div style="height:26px;background:var(--track-bg);border-radius:4px;overflow:hidden;display:flex">'
       +'<div style="width:'+barW+'%;display:flex;height:100%">'+segs+'</div></div>'
       +'<div style="font-size:10px;color:var(--text-muted);font-family:\'Consolas\',monospace">'+lbl+'</div>'
       +'</div>';
@@ -3646,7 +3723,7 @@ function renderRangeTable(data,total){
     return '<tr><td>'+rng.label+'</td>'
       +'<td style="font-family:\'Consolas\',monospace">'+rows.length+'</td>'
       +'<td style="font-family:\'Consolas\',monospace;color:var(--green)">'+(sum>0?'¥'+Math.round(sum).toLocaleString('ja-JP'):'—')+'</td>'
-      +'<td><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:rgba(255,255,255,.05);border-radius:3px"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:3px"></div></div>'
+      +'<td><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--track-bg);border-radius:3px"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:3px"></div></div>'
       +'<span style="font-size:10px;color:var(--text-muted);width:28px;text-align:right">'+pct+'%</span></div></td></tr>';
   }).join('');
 }
@@ -5323,7 +5400,7 @@ function renderYearlyRank(){
       const isTop = d.co==='豊国工業';
       return `<div style="display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;margin-bottom:8px">
         <div style="font-size:11px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.co)}</div>
-        <div style="position:relative;height:24px;background:rgba(255,255,255,.04);border-radius:3px;overflow:hidden;${isTop?'outline:2px solid rgba(255,255,255,.3)':''}">
+        <div style="position:relative;height:24px;background:var(--track-bg);border-radius:3px;overflow:hidden;${isTop?'outline:2px solid var(--highlight-outline)':''}">
           <div style="width:${w}%;height:100%;background:${col};border-radius:3px;display:flex;align-items:center;padding-left:8px;box-sizing:border-box">
             ${w>20?`<span style="font-family:'Consolas',monospace;font-size:10px;color:#fff">${fmt(d.sum)}</span>`:''}
           </div>
