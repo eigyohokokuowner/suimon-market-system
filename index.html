@@ -604,7 +604,7 @@
             <th onclick="sortBy(0)" data-col="0">落札会社名</th>
             <th onclick="sortBy(1)" data-col="1">案件ID</th>
             <th onclick="sortBy(3)" data-col="3" class="col-name">案件名</th>
-            <th onclick="sortBy(4)" data-col="4">機関</th>
+            <th onclick="sortBy(4)" data-col="4" style="min-width:150px">機関</th>
             <th onclick="sortBy(5)" data-col="5">機関所在地</th>
             <th onclick="sortBy(6)" data-col="6">施工場所</th>
             <th onclick="sortBy(7)" data-col="7">案件公示日</th>
@@ -2477,7 +2477,7 @@ function renderTable(){
       +'<td class="col-company">'+companyCell+'</td>'
       +'<td class="col-id">'+esc(v[1])+'</td>'
       +'<td class="col-name" title="'+esc(v[3])+'">'+esc(v[3])+'</td>'
-      +'<td><input type="text" class="org-edit-input" style="background:transparent;border:1px solid transparent;border-radius:4px;color:var(--text);font-size:12px;padding:3px 6px;width:100%;box-sizing:border-box" value="'+esc(v[4])+'" title="クリックして機関名を編集" onfocus="this.style.background=\'var(--surface2)\';this.style.borderColor=\'var(--accent)\'" onblur="this.style.background=\'transparent\';this.style.borderColor=\'transparent\'" onchange="setOrg(\''+rid+'\',this.value)"></td>'
+      +'<td style="min-width:150px"><input type="text" class="org-edit-input" style="background:transparent;border:1px solid transparent;border-radius:4px;color:var(--text);font-size:12px;padding:3px 6px;width:100%;min-width:140px;box-sizing:border-box" value="'+esc(v[4])+'" title="クリックして機関名を編集" onfocus="this.style.background=\'var(--surface2)\';this.style.borderColor=\'var(--accent)\'" onblur="this.style.background=\'transparent\';this.style.borderColor=\'transparent\'" onchange="setOrg(\''+rid+'\',this.value)"></td>'
       +'<td><div class="place-cell">'+orgLocSelect+'</div></td>'
       +'<td><div class="place-cell">'+placeSelect+'</div></td>'
       +'<td>'+esc(v[7])+'</td>'
