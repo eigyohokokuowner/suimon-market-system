@@ -174,11 +174,11 @@
   .loading-bar{height:2px;background:linear-gradient(90deg,var(--accent),var(--green),var(--accent));background-size:200% 100%;animation:shimmer 1.2s infinite;border-radius:2px;}
   @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
   /* 受注高比較表 */
-  .trend-table{width:100%;border-collapse:collapse;font-size:13px;}
-  .trend-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:8px 10px;font-size:12px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-align:center;white-space:nowrap;}
+  .trend-table{width:100%;border-collapse:collapse;font-size:15px;}
+  .trend-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:9px 12px;font-size:13px;font-weight:700;color:var(--text-muted);letter-spacing:.5px;text-align:center;white-space:nowrap;}
   .trend-table th.col-co{text-align:left;min-width:120px;}
-  .trend-table td{border:1px solid var(--table-border);padding:7px 10px;font-family:'Consolas',monospace;font-size:13px;text-align:right;white-space:nowrap;}
-  .trend-table td.col-co{text-align:left;color:var(--text);font-family:system-ui,sans-serif;font-size:13px;font-weight:500;}
+  .trend-table td{border:1px solid var(--table-border);padding:8px 12px;font-family:'Consolas',monospace;font-size:15px;text-align:right;white-space:nowrap;}
+  .trend-table td.col-co{text-align:left;color:var(--text);font-family:system-ui,sans-serif;font-size:15px;font-weight:500;}
   .trend-table tr:hover td{background:var(--row-hover);}
   .trend-table .row-highlight td{background:var(--highlight-row-bg);}
   .trend-table .row-highlight td.col-co{color:var(--yellow);font-weight:700;}
@@ -924,14 +924,14 @@
         </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
-        <div style="display:grid;grid-template-columns:1fr 240px;gap:16px;align-items:start">
+        <div style="display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start">
           <div>
             <div id="yearly-rank-table-container" style="overflow-x:auto;margin-bottom:16px"></div>
             <div id="yearly-rank-chart-container"></div>
           </div>
           <div>
-            <div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;letter-spacing:.5px">全国工事合計</div>
-            <div id="yearly-rank-total-container"></div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;letter-spacing:.5px">全国工事合計</div>
+            <div id="yearly-rank-total-container" style="overflow-x:auto"></div>
           </div>
         </div>
       </div>
@@ -3691,11 +3691,11 @@ function renderStackedBar(recent5){
         :'';
     }).join('');
     const lbl='¥'+(Math.round(total)/100000000).toFixed(2)+'億';
-    return '<div style="display:grid;grid-template-columns:140px 1fr 80px;align-items:center;gap:8px;margin-bottom:10px">'
+    return '<div style="display:grid;grid-template-columns:140px 1fr 100px;align-items:center;gap:8px;margin-bottom:10px">'
       +'<div style="font-size:12px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+co+'">'+co+'</div>'
       +'<div style="height:26px;background:var(--track-bg);border-radius:4px;overflow:hidden;display:flex">'
       +'<div style="width:'+barW+'%;display:flex;height:100%">'+segs+'</div></div>'
-      +'<div style="font-size:10px;color:var(--text-muted);font-family:\'Consolas\',monospace">'+lbl+'</div>'
+      +'<div style="font-size:14px;font-weight:600;color:var(--text-muted);font-family:\'Consolas\',monospace;white-space:nowrap">'+lbl+'</div>'
       +'</div>';
   }).join('');
 
@@ -5398,13 +5398,13 @@ function renderYearlyRank(){
       const w = Math.round(d.sum/maxSum*100);
       const col = RANK_COLORS[d.co]||'var(--accent)';
       const isTop = d.co==='豊国工業';
-      return `<div style="display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.co)}</div>
-        <div style="position:relative;height:24px;background:var(--track-bg);border-radius:3px;overflow:hidden;${isTop?'outline:2px solid var(--highlight-outline)':''}">
+      return `<div style="display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.co)}</div>
+        <div style="position:relative;height:30px;background:var(--track-bg);border-radius:3px;overflow:hidden;${isTop?'outline:2px solid var(--red)':''}">
           <div style="width:${w}%;height:100%;background:${col};border-radius:3px;display:flex;align-items:center;padding-left:8px;box-sizing:border-box">
-            ${w>20?`<span style="font-family:'Consolas',monospace;font-size:10px;color:#fff">${fmt(d.sum)}</span>`:''}
+            ${w>20?`<span style="font-family:'Consolas',monospace;font-size:13px;font-weight:600;color:#fff">${fmt(d.sum)}</span>`:''}
           </div>
-          ${w<=20&&d.sum>0?`<span style="position:absolute;left:${w+1}%;top:50%;transform:translateY(-50%);font-family:monospace;font-size:10px;color:var(--text-muted)">${fmt(d.sum)}</span>`:''}
+          ${w<=20&&d.sum>0?`<span style="position:absolute;left:${w+1}%;top:50%;transform:translateY(-50%);font-family:monospace;font-size:13px;font-weight:600;color:var(--text-muted)">${fmt(d.sum)}</span>`:''}
         </div>
       </div>`;
     }).join('');
@@ -5426,7 +5426,7 @@ function renderYearlyRank(){
     const grandSum   = toyotaSum + subSum;
     totalEl.innerHTML = `
       <div style="font-size:11px;color:var(--text-muted);font-weight:600;margin-bottom:6px">豊国工業合計</div>
-      <table class="trend-table" style="font-size:12px">
+      <table class="trend-table" style="font-size:14px">
         <thead><tr><th class="col-co">分類</th><th style="text-align:right">件数</th><th style="text-align:right">金額</th></tr></thead>
         <tbody>
           <tr><td class="col-co">元請け</td>
