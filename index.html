@@ -1152,7 +1152,7 @@
     </div>
 
     <!-- 10社合計（サマリー） -->
-    <div class="ana-card" style="margin-bottom:16px;max-width:520px">
+    <div class="ana-card" style="margin-bottom:16px;max-width:400px">
       <div class="ana-card-header">
         <div class="ana-card-title">📋 10社合計</div>
         <div style="font-size:10px;color:var(--text-muted)" id="org-total-table-period"></div>
@@ -4712,6 +4712,15 @@ function classifyOrgForTable(org, shikaku){
   return '点検役務';
 }
 // 9社合計（機関カテゴリ別）を集計する共通ヘルパー（renderOrgTableのcatTotalと同じロジック）
+// 集計対象期間の表示テキストを求める（期フィルター中は「◯◯期」、それ以外は年度範囲）
+function periodLabelText(data){
+  if(anaFilterMode==='period' && anaPeriod){
+    return anaPeriod+'期';
+  }
+  const years = [...new Set(data.map(r=>r['年度']).filter(y=>y&&y!=='不明'))].sort();
+  return years.length ? years[0]+'〜'+years[years.length-1] : '';
+}
+
 function computeOrgCatTotal(data){
   const COMPANIES = ['豊国工業','IHIインフラスクエア','丸島アクアシステム','カナデビア','佐藤鉄工','西田鉄工','開成工業','日東河川工業','旭イノベックス'];
   const catTotal = {};
@@ -4741,23 +4750,26 @@ function renderOrgTotalTable(data){
   const container = document.getElementById('org-total-table-container');
   const periodEl   = document.getElementById('org-total-table-period');
   if(!container) return;
-  const years = [...new Set(data.map(r=>r['年度']).filter(y=>y&&y!=='不明'))].sort();
-  if(periodEl) periodEl.textContent = years.length ? years[0]+'〜'+years[years.length-1] : '';
+  if(periodEl) periodEl.textContent = periodLabelText(data);
   const catTotal = computeOrgCatTotal(data);
   const fmtM = v => v===0 ? '<span style="color:var(--border)">0</span>' : '¥'+Math.round(v).toLocaleString('ja-JP');
   const rows = ORG_CATEGORIES.map(cat=>{
     const d = catTotal[cat];
-    return '<tr><td class="col-co">'+esc(cat)+'</td>'
-      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+(d.cnt||'')+'</td>'
-      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+fmtM(d.sum)+'</td></tr>';
+    return '<tr><td class="col-item">'+esc(cat)+'</td>'
+      +'<td class="cnt">'+(d.cnt||'')+'</td>'
+      +'<td class="num">'+fmtM(d.sum)+'</td></tr>';
   }).join('');
-  container.innerHTML = '<table class="trend-table">'
-    +'<thead><tr><th class="col-co">項目</th><th style="text-align:right">件数</th><th style="text-align:right">金額</th></tr></thead>'
+  container.innerHTML = '<table class="org-table">'
+    +'<thead><tr><th class="col-item">項目</th><th>件数</th><th>金額</th></tr></thead>'
     +'<tbody>'+rows
-      +'<tr class="row-total"><td class="col-co">合計</td>'
-      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+catTotal['合計'].cnt+'</td>'
-      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+fmtM(catTotal['合計'].sum)+'</td></tr>'
-    +'</tbody></table>';
+      +'<tr class="row-total"><td class="col-item">合計</td>'
+      +'<td class="cnt">'+catTotal['合計'].cnt+'</td>'
+      +'<td class="num">'+fmtM(catTotal['合計'].sum)+'</td></tr>'
+    +'</tbody></table>'
+    +'<div style="font-size:10px;color:var(--text-muted);margin-top:8px;line-height:1.6">'
+      +'※点検・整備は二重計上となるため集計から除外<br>'
+      +'※豊国下請けは除外'
+    +'</div>';
 }
 
 // ═══ 機関別集計テーブル描画 ══════════════════════════
@@ -4768,8 +4780,7 @@ function renderOrgTable(data){
   if(!container){ console.log('[ORG] container not found!'); return; }
 
   // 対象期間表示
-  const years = [...new Set(data.map(r=>r['年度']).filter(y=>y&&y!=='不明'))].sort();
-  if(periodEl) periodEl.textContent = years.length ? years[0]+'〜'+years[years.length-1] : '';
+  if(periodEl) periodEl.textContent = periodLabelText(data);
 
   // 9社 × カテゴリ集計
   const COMPANIES = ['豊国工業','IHIインフラスクエア','丸島アクアシステム','カナデビア','佐藤鉄工','西田鉄工','開成工業','日東河川工業','旭イノベックス'];
