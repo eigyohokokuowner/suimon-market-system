@@ -33,6 +33,10 @@
   }
   body.export-light::before{ display:none; } /* 背景のグリッド線を非表示 */
   body.export-light .export-btn{ display:none !important; } /* 出力ボタン自体は画像に写さない */
+  body.export-light{ overflow-x:visible !important; }
+  body.export-light .org-table th,
+  body.export-light .org-table td.col-item{ position:static !important; } /* html2canvasのsticky描画崩れ対策 */
+  body.export-light #summary-export-wrap .ana-card{ overflow:visible !important; } /* 横に長い表がカード枠で切れないように */
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:13px;min-height:100vh;overflow-x:hidden;}
   body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,200,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
@@ -1145,12 +1149,14 @@
   <!-- タブ: 集計表 -->
   <div class="tab-pane" id="tab-summary">
     <!-- 共通年度フィルター -->
-    <div style="display:flex;align-items:flex-start;justify-content:center;gap:10px;margin-bottom:16px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+    <div style="position:relative;display:flex;align-items:flex-start;justify-content:center;gap:10px;margin-bottom:16px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
       <span style="font-size:12px;color:var(--text-muted);font-weight:600;letter-spacing:.5px;padding-top:6px">📅 年度：</span>
       <button class="ana-year-filter-btn active" data-y="all" onclick="setAnaYear('all')" style="margin-top:0">全期間</button>
       <div id="ana-year-filter-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <button class="btn export-btn" style="position:absolute;top:10px;right:14px;font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportSummaryAsImage()">🖼️ 画像保存(白背景)</button>
     </div>
 
+    <div id="summary-export-wrap">
     <!-- 10社合計（サマリー） -->
     <div class="ana-card" style="margin-bottom:16px;max-width:400px">
       <div class="ana-card-header">
@@ -1227,6 +1233,7 @@
         <div class="org-table-wrap"><div id="pref-table-container"></div></div>
       </div>
     </div>
+    </div><!-- /summary-export-wrap -->
 
   </div><!-- /tab-summary -->
 
@@ -2681,6 +2688,49 @@ async function exportCardAsImage(selector, filename){
     console.warn('[SMA] 画像出力エラー:', e);
     showToast('⚠ 画像の生成に失敗しました', true);
   }finally{
+    document.body.classList.remove('export-light');
+  }
+}
+
+// 集計表タブ専用：横に長い表（機関別集計など）を含む複数カードを1枚の画像にまとめて保存する
+async function exportSummaryAsImage(){
+  const wrap = document.querySelector('#summary-export-wrap');
+  if(!wrap){ showToast('⚠ 出力対象が見つかりません', true); return; }
+
+  showToast('画像を生成しています…');
+  try{
+    await loadHtml2Canvas();
+  }catch(e){
+    showToast('⚠ 画像生成ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
+    return;
+  }
+
+  document.body.classList.add('export-light');
+  // 横スクロールが必要な表を、キャプチャのために一時的に全幅展開する（切れ防止）
+  const scrollWraps = wrap.querySelectorAll('.org-table-wrap');
+  const restoreList = [];
+  scrollWraps.forEach(el=>{
+    restoreList.push({ el, width: el.style.width, overflow: el.style.overflow });
+    el.style.width = el.scrollWidth + 'px';
+    el.style.overflow = 'visible';
+  });
+  try{
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const canvas = await window.html2canvas(wrap, { backgroundColor:'#ffffff', scale:2, useCORS:true });
+    const url = canvas.toDataURL('image/png');
+    const label = (anaFilterMode==='period' && anaPeriod) ? anaPeriod+'期' : (anaYear==='all' ? '全期間' : anaYear);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'NJSS集計表_'+label+'.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('✓ 画像を保存しました');
+  }catch(e){
+    console.warn('[SMA] 集計表画像出力エラー:', e);
+    showToast('⚠ 画像の生成に失敗しました', true);
+  }finally{
+    restoreList.forEach(({el,width,overflow})=>{ el.style.width=width; el.style.overflow=overflow; });
     document.body.classList.remove('export-light');
   }
 }
