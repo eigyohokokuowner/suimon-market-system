@@ -191,6 +191,9 @@
   .ana-year-filter-btn{padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:12px;cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;}
   .ana-year-filter-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(0,200,255,.08);}
   .ana-year-filter-btn.active{background:var(--accent2);border-color:var(--accent);color:var(--accent);font-weight:600;}
+  .ana-period-filter-btn{padding:3px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text-muted);font-size:10px;cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;}
+  .ana-period-filter-btn:hover{border-color:var(--green);color:var(--green);background:rgba(0,229,160,.08);}
+  .ana-period-filter-btn.active{background:var(--green);border-color:var(--green);color:#0a0e1a;font-weight:700;}
   /* 機関別集計テーブル */
   .org-table-wrap{overflow-x:auto;margin-bottom:16px;}
   .org-table{border-collapse:collapse;font-size:11px;white-space:nowrap;}
@@ -1142,10 +1145,21 @@
   <!-- タブ: 集計表 -->
   <div class="tab-pane" id="tab-summary">
     <!-- 共通年度フィルター -->
-    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
-      <span style="font-size:12px;color:var(--text-muted);font-weight:600;letter-spacing:.5px">📅 年度：</span>
-      <button class="ana-year-filter-btn active" data-y="all" onclick="setAnaYear('all')">全期間</button>
+    <div style="display:flex;align-items:flex-start;justify-content:center;gap:10px;margin-bottom:16px;padding:12px 18px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+      <span style="font-size:12px;color:var(--text-muted);font-weight:600;letter-spacing:.5px;padding-top:6px">📅 年度：</span>
+      <button class="ana-year-filter-btn active" data-y="all" onclick="setAnaYear('all')" style="margin-top:0">全期間</button>
       <div id="ana-year-filter-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+
+    <!-- 10社合計（サマリー） -->
+    <div class="ana-card" style="margin-bottom:16px;max-width:520px">
+      <div class="ana-card-header">
+        <div class="ana-card-title">📋 10社合計</div>
+        <div style="font-size:10px;color:var(--text-muted)" id="org-total-table-period"></div>
+      </div>
+      <div class="ana-card-body" style="padding:12px">
+        <div id="org-total-table-container"></div>
+      </div>
     </div>
 
     <!-- 機関別集計テーブル -->
@@ -2978,6 +2992,8 @@ const MKT_EXCLUDED_KEY = 'njss_mkt_list_excluded';
 let mktList = [];
 let mktListExcluded = []; // 集計除外（特殊案件）：各社受注案件リストには表示するが、分析・集計からは除外
 let anaYear  = 'all';
+let anaFilterMode = 'year'; // 'year' | 'period'（期）
+let anaPeriod = null; // 期番号（豊国工業の決算期：10/1〜翌9/30）
 const MKT_COLS = ['受注会社','案件ID','案件名','機関','機関所在地','施工場所','落札日(契約日)','落札価格(税抜)','年度','入札形式','入札資格','追加元'];
 
 function loadMktList(){
@@ -3560,11 +3576,47 @@ function toJpEra(fyStr){
 
 function setAnaYear(y){
   anaYear=y;
+  anaFilterMode='year';
+  anaPeriod=null;
   // フィルターボタンのactive切替
   document.querySelectorAll('.ana-year-filter-btn').forEach(b=>{
     b.classList.toggle('active', b.dataset.y===y);
   });
+  document.querySelectorAll('.ana-period-filter-btn').forEach(b=>b.classList.remove('active'));
   // アクティブなタブに応じて描画
+  const summaryActive = document.getElementById('tab-summary') &&
+    document.getElementById('tab-summary').classList.contains('active');
+  if(summaryActive) requestAnimationFrame(()=>requestAnimationFrame(renderSummary));
+  else renderAnalysis();
+}
+
+// "2025年度"→69期 のように、暦年をもとに期番号を求める（69期=2025/10/1〜2026/9/30）
+function fyToPeriod(fyStr){
+  const m = String(fyStr).match(/^(\d{4})年度$/);
+  if(!m) return null;
+  return parseInt(m[1]) - 1956;
+}
+// 期番号→対象期間（開始・終了）をYYYYMMDD数値で返す
+function periodDateRange(p){
+  const y = p + 1956;
+  return { startNum: y*10000 + 1001, endNum: (y+1)*10000 + 930 };
+}
+// "2025/10/15" 等の日付文字列をYYYYMMDD数値に変換（比較用）
+function ymdNum(v){
+  if(!v) return 0;
+  const s = String(v).replace(/-/g,'/').trim();
+  const m = s.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})/);
+  if(!m) return 0;
+  return parseInt(m[1])*10000 + parseInt(m[2])*100 + parseInt(m[3]);
+}
+
+function setAnaPeriod(p){
+  anaFilterMode='period';
+  anaPeriod=p;
+  document.querySelectorAll('.ana-year-filter-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.ana-period-filter-btn').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.p)===p);
+  });
   const summaryActive = document.getElementById('tab-summary') &&
     document.getElementById('tab-summary').classList.contains('active');
   if(summaryActive) requestAnimationFrame(()=>requestAnimationFrame(renderSummary));
@@ -3582,16 +3634,25 @@ function renderSummary(){
   const filterWrap=document.getElementById('ana-year-filter-btns');
   if(filterWrap){
     filterWrap.innerHTML=allYrs.map(y=>{
-      const act=anaYear===y?' active':'';
-      return '<button class="ana-year-filter-btn'+act+'" data-y="'+y+'" onclick="setAnaYear(this.dataset.y)">'+toJpEra(y)+'</button>';
+      const act=(anaFilterMode==='year' && anaYear===y)?' active':'';
+      const period=fyToPeriod(y);
+      const periodAct=(anaFilterMode==='period' && anaPeriod===period)?' active':'';
+      const periodBtn = period
+        ? '<button class="ana-period-filter-btn'+periodAct+'" data-p="'+period+'" onclick="setAnaPeriod('+period+')">'+period+'期</button>'
+        : '';
+      return '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">'
+        +'<button class="ana-year-filter-btn'+act+'" data-y="'+y+'" onclick="setAnaYear(this.dataset.y)">'+toJpEra(y)+'</button>'
+        +periodBtn
+        +'</div>';
     }).join('');
   }
   const allBtn=document.querySelector('.ana-year-filter-btn[data-y="all"]');
-  if(allBtn) allBtn.classList.toggle('active', anaYear==='all');
+  if(allBtn) allBtn.classList.toggle('active', anaFilterMode==='year' && anaYear==='all');
   const data=getAnaData();
   console.log('[SUMMARY] data件数:', data.length, 'containers:', 
     !!document.getElementById('org-table-container'),
     !!document.getElementById('price-table-container'));
+  renderOrgTotalTable(data);
   renderOrgTable(data);
   renderPriceTable(data);
   renderRegionTable(data);
@@ -3606,6 +3667,13 @@ function getRecentFY(n){
 }
 
 function getAnaData(){
+  if(anaFilterMode==='period' && anaPeriod){
+    const {startNum,endNum} = periodDateRange(anaPeriod);
+    return mktList.filter(r=>{
+      const d = ymdNum(r['落札日(契約日)']);
+      return d && d>=startNum && d<=endNum;
+    });
+  }
   return anaYear==='all'?mktList:mktList.filter(r=>r['年度']===anaYear);
 }
 
@@ -4643,6 +4711,55 @@ function classifyOrgForTable(org, shikaku){
   if(s.includes('役務')||s.includes('物品')) return '点検役務';
   return '点検役務';
 }
+// 9社合計（機関カテゴリ別）を集計する共通ヘルパー（renderOrgTableのcatTotalと同じロジック）
+function computeOrgCatTotal(data){
+  const COMPANIES = ['豊国工業','IHIインフラスクエア','丸島アクアシステム','カナデビア','佐藤鉄工','西田鉄工','開成工業','日東河川工業','旭イノベックス'];
+  const catTotal = {};
+  [...ORG_CATEGORIES,'合計'].forEach(cat=>{ catTotal[cat]={cnt:0,sum:0}; });
+  data.forEach(r=>{
+    const co = r['受注会社'];
+    if(!COMPANIES.includes(co)) return;
+    const cat = classifyOrgForTable(r['機関'], r['入札資格']);
+    const s   = r['入札資格']||'';
+    const p   = parseFloat(String(r['落札価格(税抜)']).replace(/[^0-9.-]/g,''))||0;
+    catTotal[cat].cnt += 1;
+    catTotal[cat].sum += p;
+    if((s.includes('役務')||s.includes('物品')) && cat !== '点検役務'){
+      catTotal['点検役務'].cnt += 1;
+      catTotal['点検役務'].sum += p;
+    }
+    if(cat !== '点検役務'){
+      catTotal['合計'].cnt += 1;
+      catTotal['合計'].sum += p;
+    }
+  });
+  return catTotal;
+}
+
+// ═══ 10社合計テーブル描画（集計表タブの一番上に表示） ══════════════
+function renderOrgTotalTable(data){
+  const container = document.getElementById('org-total-table-container');
+  const periodEl   = document.getElementById('org-total-table-period');
+  if(!container) return;
+  const years = [...new Set(data.map(r=>r['年度']).filter(y=>y&&y!=='不明'))].sort();
+  if(periodEl) periodEl.textContent = years.length ? years[0]+'〜'+years[years.length-1] : '';
+  const catTotal = computeOrgCatTotal(data);
+  const fmtM = v => v===0 ? '<span style="color:var(--border)">0</span>' : '¥'+Math.round(v).toLocaleString('ja-JP');
+  const rows = ORG_CATEGORIES.map(cat=>{
+    const d = catTotal[cat];
+    return '<tr><td class="col-co">'+esc(cat)+'</td>'
+      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+(d.cnt||'')+'</td>'
+      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+fmtM(d.sum)+'</td></tr>';
+  }).join('');
+  container.innerHTML = '<table class="trend-table">'
+    +'<thead><tr><th class="col-co">項目</th><th style="text-align:right">件数</th><th style="text-align:right">金額</th></tr></thead>'
+    +'<tbody>'+rows
+      +'<tr class="row-total"><td class="col-co">合計</td>'
+      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+catTotal['合計'].cnt+'</td>'
+      +'<td style="text-align:right;font-family:\'Consolas\',monospace">'+fmtM(catTotal['合計'].sum)+'</td></tr>'
+    +'</tbody></table>';
+}
+
 // ═══ 機関別集計テーブル描画 ══════════════════════════
 function renderOrgTable(data){
   const container = document.getElementById('org-table-container');
