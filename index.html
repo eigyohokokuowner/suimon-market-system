@@ -888,13 +888,14 @@
     </div>
 
     <!-- 過去5年 受注高比較 -->
-    <!-- 受注高比較表 -->
+    <!-- 受注高比較表 + 年度別受注高推移（1枚の画像として保存できるよう共通ラッパーで囲む） -->
+    <div id="trend-year-export-wrap">
     <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-trend-table">
       <div class="ana-card-header">
         <div class="ana-card-title">📊 過去5年の受注高比較</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div class="trend-unit" style="margin-bottom:0">金額単位：円</div>
-          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-trend-table','過去5年の受注高比較')">🖼️ 画像保存(白背景)</button>
+          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#trend-year-export-wrap','過去5年の受注高比較_年度別推移')">🖼️ 画像保存(白背景)</button>
         </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
@@ -904,7 +905,6 @@
     <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-year-chart">
       <div class="ana-card-header">
         <div class="ana-card-title">📈 年度別 受注高推移（過去5年度）</div>
-        <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-year-chart','年度別受注高推移')">🖼️ 画像保存(白背景)</button>
       </div>
       <div class="ana-card-body">
         <div class="ana-year-chart" id="ana-year-chart"></div>
@@ -913,6 +913,7 @@
         </div>
       </div>
     </div>
+    </div><!-- /trend-year-export-wrap -->
 
     <!-- 年度別受注高ランキング -->
     <div class="ana-card ana-grid-full" style="margin-bottom:16px" id="card-yearly-rank">
