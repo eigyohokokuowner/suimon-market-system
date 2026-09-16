@@ -2871,7 +2871,7 @@ function openAccountManageModal(){
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:19000;display:flex;align-items:center;justify-content:center;padding:20px';
 
   const box = document.createElement('div');
-  box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:460px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
+  box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:680px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.5)';
 
   box.innerHTML = `
     <div style="padding:18px 20px 12px;border-bottom:1px solid var(--border)">
@@ -2881,6 +2881,10 @@ function openAccountManageModal(){
     <div style="padding:14px 20px;border-top:1px solid var(--border)">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">新しいIDを追加</div>
       <input id="acc-new-id" type="text" placeholder="ID（例：sato）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="acc-new-name" type="text" placeholder="名前（例：佐藤太郎）" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px">
+        <input id="acc-new-affiliation" type="text" placeholder="所属（例：営業部）" style="flex:1;min-width:0;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px">
+      </div>
       <input id="acc-new-pass" type="text" placeholder="初期パスワード（4文字以上）" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;margin-bottom:10px">
       <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin-bottom:4px">
         <input type="checkbox" id="acc-new-edit" style="margin-top:2px">
@@ -2914,14 +2918,41 @@ function openAccountManageModal(){
         : '<span style="font-size:11px;color:var(--text-muted)">👁 閲覧のみ</span>';
       const toggleLabel = a.role==='edit' ? '閲覧のみにする' : '編集可にする';
       row.innerHTML = `
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--text);font-weight:600">${esc(a.id)}</div>
-          <div style="margin-top:2px">${roleLabel}</div>
+        <div style="flex:1;min-width:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="min-width:70px">
+            <div style="font-size:13px;color:var(--text);font-weight:600">${esc(a.id)}</div>
+            <div style="margin-top:2px">${roleLabel}</div>
+          </div>
+          <input type="text" class="acc-name-input" data-idx="${idx}" value="${esc(a.name||'')}" placeholder="名前" style="width:110px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px">
+          <input type="text" class="acc-affiliation-input" data-idx="${idx}" value="${esc(a.affiliation||'')}" placeholder="所属" style="width:120px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px">
         </div>
         <button class="btn acc-toggle-btn" data-idx="${idx}" style="font-size:11px;padding:5px 10px;white-space:nowrap">${toggleLabel}</button>
         <button class="btn acc-delete-btn" data-idx="${idx}" style="font-size:11px;padding:5px 10px;color:var(--red);border-color:rgba(255,95,126,0.4);white-space:nowrap">削除</button>
       `;
       wrap.appendChild(row);
+    });
+
+    wrap.querySelectorAll('.acc-name-input').forEach(input=>{
+      input.addEventListener('change', async ()=>{
+        const i = parseInt(input.dataset.idx);
+        let accs;
+        try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
+        accs[i].name = input.value;
+        try{ await saveAccounts(accs); }
+        catch(e){ showToast('⚠ 保存に失敗しました。通信環境をご確認の上、再度お試しください', true); return; }
+        showToast('✓ 名前を更新しました');
+      });
+    });
+    wrap.querySelectorAll('.acc-affiliation-input').forEach(input=>{
+      input.addEventListener('change', async ()=>{
+        const i = parseInt(input.dataset.idx);
+        let accs;
+        try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
+        accs[i].affiliation = input.value;
+        try{ await saveAccounts(accs); }
+        catch(e){ showToast('⚠ 保存に失敗しました。通信環境をご確認の上、再度お試しください', true); return; }
+        showToast('✓ 所属を更新しました');
+      });
     });
 
     wrap.querySelectorAll('.acc-toggle-btn').forEach(btn=>{
@@ -2983,13 +3014,15 @@ function openAccountManageModal(){
   box.querySelector('#acc-add-btn').addEventListener('click', async ()=>{
     const idVal = box.querySelector('#acc-new-id').value.trim();
     const passVal = box.querySelector('#acc-new-pass').value;
+    const nameVal = box.querySelector('#acc-new-name').value.trim();
+    const affiliationVal = box.querySelector('#acc-new-affiliation').value.trim();
     const isEdit = box.querySelector('#acc-new-edit').checked;
     if(!idVal){ showToast('IDを入力してください', true); return; }
     if(passVal.length<4){ showToast('パスワードは4文字以上にしてください', true); return; }
     let accs;
     try{ accs = await loadAccounts(); }catch(e){ showToast('⚠ サーバーに接続できません', true); return; }
     if(accs.some(a=>a.id===idVal)){ showToast('そのIDは既に使用されています', true); return; }
-    accs.push({ id:idVal, pass:passVal, role: isEdit?'edit':'view' });
+    accs.push({ id:idVal, pass:passVal, role: isEdit?'edit':'view', name:nameVal, affiliation:affiliationVal });
     try{
       await saveAccounts(accs);
     }catch(e){
@@ -2997,6 +3030,8 @@ function openAccountManageModal(){
       return;
     }
     box.querySelector('#acc-new-id').value='';
+    box.querySelector('#acc-new-name').value='';
+    box.querySelector('#acc-new-affiliation').value='';
     box.querySelector('#acc-new-pass').value='';
     box.querySelector('#acc-new-edit').checked=false;
     renderAccountList();
