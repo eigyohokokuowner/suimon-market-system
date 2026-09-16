@@ -923,6 +923,10 @@
           <select class="filter-select" id="yearly-rank-select" onchange="setYearlyRankYear(this.value)" style="padding:5px 28px 5px 10px;font-size:12px">
             <option value="">年度を選択</option>
           </select>
+          <label style="font-size:11px;color:var(--text-muted)">期：</label>
+          <select class="filter-select" id="yearly-rank-period-select" onchange="setYearlyRankPeriod(this.value)" style="padding:5px 28px 5px 10px;font-size:12px">
+            <option value="">期を選択</option>
+          </select>
           <span id="yearly-rank-title" style="font-size:12px;color:var(--accent);font-weight:600"></span>
         </div>
         <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
@@ -5479,24 +5483,73 @@ const RANK_COLORS = {
 };
 
 let yearlyRankYear = '';
+let yearlyRankMode = 'year'; // 'year' | 'period'
+let yearlyRankPeriod = null;
 
 function initYearlyRankSelect(){
   const sel = document.getElementById('yearly-rank-select');
+  const periodSel = document.getElementById('yearly-rank-period-select');
   if(!sel) return;
   const allYrs = [...new Set(mktList.map(r=>r['年度']).filter(y=>y&&y!=='不明'))].sort().reverse().slice(0,10);
   sel.innerHTML = '<option value="">年度を選択</option>'
     + allYrs.map(y=>`<option value="${y}">${toJpEra(y)}</option>`).join('');
+  if(periodSel){
+    const periods = [...new Set(allYrs.map(y=>fyToPeriod(y)).filter(p=>p!=null))].slice(0,5);
+    periodSel.innerHTML = '<option value="">期を選択</option>'
+      + periods.map(p=>`<option value="${p}">${p}期</option>`).join('');
+  }
   // デフォルトは最新年度
   if(allYrs.length){
     yearlyRankYear = allYrs[0];
+    yearlyRankMode = 'year';
+    yearlyRankPeriod = null;
     sel.value = yearlyRankYear;
+    if(periodSel) periodSel.value = '';
     renderYearlyRank();
   }
 }
 
 function setYearlyRankYear(y){
   yearlyRankYear = y;
+  yearlyRankMode = 'year';
+  yearlyRankPeriod = null;
+  const periodSel = document.getElementById('yearly-rank-period-select');
+  if(periodSel) periodSel.value = '';
   renderYearlyRank();
+}
+
+function setYearlyRankPeriod(p){
+  p = parseInt(p) || null;
+  const sel = document.getElementById('yearly-rank-select');
+  if(!p){
+    // 「期を選択」に戻した場合は年度モードに戻す
+    yearlyRankMode = 'year';
+    yearlyRankPeriod = null;
+    renderYearlyRank();
+    return;
+  }
+  yearlyRankPeriod = p;
+  yearlyRankMode = 'period';
+  if(sel) sel.value = '';
+  renderYearlyRank();
+}
+
+// 現在の年度/期モードに応じたフィルター済みデータを取得
+function getYearlyRankData(){
+  if(yearlyRankMode==='period' && yearlyRankPeriod){
+    const {startNum,endNum} = periodDateRange(yearlyRankPeriod);
+    return mktList.filter(r=>{
+      const d = ymdNum(r['落札日(契約日)']);
+      return d && d>=startNum && d<=endNum;
+    });
+  }
+  if(!yearlyRankYear) return [];
+  return mktList.filter(r=>r['年度']===yearlyRankYear);
+}
+// 現在の年度/期モードに応じた表示ラベル（例：「令和8年度」または「69期」）
+function yearlyRankLabel(){
+  if(yearlyRankMode==='period' && yearlyRankPeriod) return yearlyRankPeriod+'期';
+  return yearlyRankYear ? toJpEra(yearlyRankYear) : '';
 }
 
 // 豊国（下請）判定：受注会社名に「豊国」と「下請」を含むかどうかで判定
@@ -5510,11 +5563,12 @@ function isToyokuniSub(r){
 }
 
 function renderYearlyRank(){
-  if(!yearlyRankYear) return;
+  if(yearlyRankMode!=='period' && !yearlyRankYear) return;
+  const label = yearlyRankLabel();
   const titleEl = document.getElementById('yearly-rank-title');
-  if(titleEl) titleEl.textContent = toJpEra(yearlyRankYear) + '　受注高';
+  if(titleEl) titleEl.textContent = label + '　受注高';
 
-  const data = mktList.filter(r=>r['年度']===yearlyRankYear);
+  const data = getYearlyRankData();
 
   // 各社集計（RANK_COMPANIESの9社のみ。豊国（下請）は別枠集計のためここでは対象外）
   const stats = {};
@@ -5578,26 +5632,26 @@ function renderYearlyRank(){
       const isTop = d.co==='豊国工業';
       return `<div style="display:grid;grid-template-columns:120px 1fr;align-items:center;gap:8px;margin-bottom:10px">
         <div style="font-size:12px;color:var(--text);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.co)}</div>
-        <div style="position:relative;height:30px;background:var(--track-bg);border-radius:3px;overflow:hidden;${isTop?'outline:2px solid var(--red)':''}">
-          <div style="width:${w}%;height:100%;background:${col};border-radius:3px;display:flex;align-items:center;padding-left:8px;box-sizing:border-box">
+        <div style="position:relative;height:30px;background:var(--track-bg);border-radius:3px;overflow:hidden">
+          <div style="width:${w}%;height:100%;background:${col};border-radius:3px;display:flex;align-items:center;padding-left:8px;box-sizing:border-box;${isTop?'outline:2px solid var(--red);outline-offset:-2px':''}">
             ${w>20?`<span style="font-family:'Consolas',monospace;font-size:13px;font-weight:600;color:#fff">${fmt(d.sum)}</span>`:''}
           </div>
           ${w<=20&&d.sum>0?`<span style="position:absolute;left:${w+1}%;top:50%;transform:translateY(-50%);font-family:monospace;font-size:13px;font-weight:600;color:var(--text-muted)">${fmt(d.sum)}</span>`:''}
         </div>
       </div>`;
     }).join('');
-    chartEl.innerHTML = `<div style="font-size:11px;font-weight:600;color:var(--text);text-align:center;margin-bottom:12px">${toJpEra(yearlyRankYear)}　受注高</div>${bars}`;
+    chartEl.innerHTML = `<div style="font-size:11px;font-weight:600;color:var(--text);text-align:center;margin-bottom:12px">${label}　受注高</div>${bars}`;
   }
 
   // ── 豊国工業合計（元請け＋下請け） ──
   const totalEl = document.getElementById('yearly-rank-total-container');
   if(totalEl){
     // 元請け：受注会社名に「豊国」を含み「下請」を含まないもの（= 豊国工業）
-    const toyotaData = mktList.filter(r=>r['年度']===yearlyRankYear&&String(r['受注会社']||'').includes('豊国')&&!isToyokuniSubCompany(r['受注会社']));
+    const toyotaData = data.filter(r=>String(r['受注会社']||'').includes('豊国')&&!isToyokuniSubCompany(r['受注会社']));
     const toyotaCnt  = toyotaData.length;
     const toyotaSum  = toyotaData.reduce((a,r)=>a+(parseFloat(String(r['落札価格(税抜)']).replace(/[^0-9.-]/g,''))||0),0);
     // 下請け：受注会社名に「豊国」と「下請」を両方含むもの（例：豊国（下請）／豊国(下請) など表記ゆれ対応）
-    const subData    = mktList.filter(r=>r['年度']===yearlyRankYear&&isToyokuniSubCompany(r['受注会社']));
+    const subData    = data.filter(r=>isToyokuniSubCompany(r['受注会社']));
     const subCnt     = subData.length;
     const subSum     = subData.reduce((a,r)=>a+(parseFloat(String(r['落札価格(税抜)']).replace(/[^0-9.-]/g,''))||0),0);
     const grandCnt   = toyotaCnt + subCnt;
