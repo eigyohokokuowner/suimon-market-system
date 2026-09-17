@@ -36,7 +36,8 @@
   body.export-light{ overflow-x:visible !important; }
   body.export-light .org-table th,
   body.export-light .org-table td.col-item{ position:static !important; } /* html2canvasのsticky描画崩れ対策 */
-  body.export-light #summary-export-wrap .ana-card{ overflow:visible !important; } /* 横に長い表がカード枠で切れないように */
+  body.export-light #summary-export-wrap-1 .ana-card,
+  body.export-light #summary-export-wrap-2 .ana-card{ overflow:visible !important; } /* 横に長い表がカード枠で切れないように */
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:13px;min-height:100vh;overflow-x:hidden;}
   body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,200,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
@@ -1159,10 +1160,14 @@
       <span style="font-size:12px;color:var(--text-muted);font-weight:600;letter-spacing:.5px;padding-top:6px">📅 年度：</span>
       <button class="ana-year-filter-btn active" data-y="all" onclick="setAnaYear('all')" style="margin-top:0">全期間</button>
       <div id="ana-year-filter-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-      <button class="btn export-btn" style="position:absolute;top:10px;right:14px;font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportSummaryAsImage()">🖼️ 画像保存(白背景)</button>
+      <button class="btn export-btn" style="position:absolute;top:10px;right:14px;font-size:10px;padding:4px 10px;white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <span onclick="exportSummaryAsImage()" style="cursor:pointer">🖼️ 画像保存(白背景・全2枚)</span>
+        <span style="color:var(--border)">|</span>
+        <span onclick="exportSummaryAsPDF()" style="cursor:pointer">📄 PDF保存(A3・全2ページ)</span>
+      </button>
     </div>
 
-    <div id="summary-export-wrap">
+    <div id="summary-export-wrap-1">
     <!-- 10社合計（サマリー） -->
     <div class="ana-card" style="margin-bottom:16px;max-width:460px">
       <div class="ana-card-header">
@@ -1217,7 +1222,9 @@
         <div class="org-table-wrap"><div id="mlit-table-container"></div></div>
       </div>
     </div>
+    </div><!-- /summary-export-wrap-1 -->
 
+    <div id="summary-export-wrap-2">
     <!-- 農林省内訳 -->
     <div class="ana-card ana-grid-full" style="margin-bottom:16px">
       <div class="ana-card-header">
@@ -1239,7 +1246,7 @@
         <div class="org-table-wrap"><div id="pref-table-container"></div></div>
       </div>
     </div>
-    </div><!-- /summary-export-wrap -->
+    </div><!-- /summary-export-wrap-2 -->
 
   </div><!-- /tab-summary -->
 
@@ -2664,6 +2671,20 @@ function loadHtml2Canvas(){
   return window._html2canvasLoading;
 }
 
+// PDF保存時にだけCDNから読み込む（jsPDF）
+function loadJsPdf(){
+  if(window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
+  if(window._jspdfLoading) return window._jspdfLoading;
+  window._jspdfLoading = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('jsPDF読み込み失敗'));
+    document.head.appendChild(s);
+  });
+  return window._jspdfLoading;
+}
+
 // 指定したカード要素を、白背景テーマに一時的に切り替えた上でPNG画像として保存する
 async function exportCardAsImage(selector, filename){
   const target = document.querySelector(selector);
@@ -2698,10 +2719,57 @@ async function exportCardAsImage(selector, filename){
   }
 }
 
-// 集計表タブ専用：横に長い表（機関別集計など）を含む複数カードを1枚の画像にまとめて保存する
+// 集計表タブ専用：横に長い表（機関別集計など）が右端で切れないよう、
+// キャプチャ対象そのものを表の実幅まで広げてからhtml2canvasに渡す共通処理。
+// （org-table-wrapだけを広げてもカード自体の幅は変わらず overflow:hidden で
+// 　切れてしまうため、外側のwrap要素ごと実幅まで広げるのがポイント）
+async function captureWideElement(wrap){
+  const scrollWraps = wrap.querySelectorAll('.org-table-wrap');
+  const restoreList = [];
+  scrollWraps.forEach(el=>{
+    restoreList.push({ el, width: el.style.width, overflow: el.style.overflow });
+    el.style.width = el.scrollWidth + 'px';
+    el.style.overflow = 'visible';
+  });
+
+  // 各表の実幅（org-table-wrapのscrollWidth）から、キャプチャに必要な最大幅を算出
+  let maxWidth = wrap.getBoundingClientRect().width;
+  scrollWraps.forEach(el=>{
+    const cardBody = el.closest('.ana-card-body');
+    const pad = cardBody ? (parseFloat(getComputedStyle(cardBody).paddingLeft)||0) + (parseFloat(getComputedStyle(cardBody).paddingRight)||0) : 24;
+    const needed = el.scrollWidth + pad + 4; // 表の実幅＋カード左右パディング＋ボーダー分の余白
+    if(needed > maxWidth) maxWidth = needed;
+  });
+
+  const prevWrapWidth = wrap.style.width;
+  wrap.style.width = Math.ceil(maxWidth) + 'px';
+
+  try{
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const canvas = await window.html2canvas(wrap, {
+      backgroundColor:'#ffffff', scale:3, useCORS:true,
+      windowWidth: Math.ceil(maxWidth) + 40,
+      width: Math.ceil(maxWidth),
+    });
+    return canvas;
+  } finally {
+    wrap.style.width = prevWrapWidth;
+    restoreList.forEach(({el,width,overflow})=>{ el.style.width=width; el.style.overflow=overflow; });
+  }
+}
+
+function summaryExportLabel(){
+  return (anaFilterMode==='period' && anaPeriod) ? anaPeriod+'期' : (anaYear==='all' ? '全期間' : anaYear);
+}
+
+// 集計表タブ専用：1枚目（10社合計〜国交省内訳）・2枚目（農林省内訳・都道府県内訳）の
+// 2枚のPNGとして書き出す
 async function exportSummaryAsImage(){
-  const wrap = document.querySelector('#summary-export-wrap');
-  if(!wrap){ showToast('⚠ 出力対象が見つかりません', true); return; }
+  const wraps = [
+    document.querySelector('#summary-export-wrap-1'),
+    document.querySelector('#summary-export-wrap-2'),
+  ];
+  if(!wraps[0] || !wraps[1]){ showToast('⚠ 出力対象が見つかりません', true); return; }
 
   showToast('画像を生成しています…');
   try{
@@ -2712,31 +2780,77 @@ async function exportSummaryAsImage(){
   }
 
   document.body.classList.add('export-light');
-  // 横スクロールが必要な表を、キャプチャのために一時的に全幅展開する（切れ防止）
-  const scrollWraps = wrap.querySelectorAll('.org-table-wrap');
-  const restoreList = [];
-  scrollWraps.forEach(el=>{
-    restoreList.push({ el, width: el.style.width, overflow: el.style.overflow });
-    el.style.width = el.scrollWidth + 'px';
-    el.style.overflow = 'visible';
-  });
   try{
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    const canvas = await window.html2canvas(wrap, { backgroundColor:'#ffffff', scale:3, useCORS:true });
-    const url = canvas.toDataURL('image/png');
-    const label = (anaFilterMode==='period' && anaPeriod) ? anaPeriod+'期' : (anaYear==='all' ? '全期間' : anaYear);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'NJSS集計表_'+label+'.png';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast('✓ 画像を保存しました');
+    const label = summaryExportLabel();
+    for(let i=0;i<wraps.length;i++){
+      const canvas = await captureWideElement(wraps[i]);
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'NJSS集計表_'+label+'_'+(i+1)+'.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // 連続ダウンロードがブラウザに弾かれないよう、1枚ずつ少し間隔をあける
+      await new Promise(r=>setTimeout(r, 300));
+    }
+    showToast('✓ 画像を2枚保存しました（1/2枚目）');
   }catch(e){
     console.warn('[SMA] 集計表画像出力エラー:', e);
     showToast('⚠ 画像の生成に失敗しました', true);
   }finally{
-    restoreList.forEach(({el,width,overflow})=>{ el.style.width=width; el.style.overflow=overflow; });
+    document.body.classList.remove('export-light');
+  }
+}
+
+// 集計表タブ専用：1枚目・2枚目をA3サイズの2ページPDFとして書き出す
+async function exportSummaryAsPDF(){
+  const wraps = [
+    document.querySelector('#summary-export-wrap-1'),
+    document.querySelector('#summary-export-wrap-2'),
+  ];
+  if(!wraps[0] || !wraps[1]){ showToast('⚠ 出力対象が見つかりません', true); return; }
+
+  showToast('PDFを生成しています…');
+  try{
+    await loadHtml2Canvas();
+    await loadJsPdf();
+  }catch(e){
+    showToast('⚠ 出力ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
+    return;
+  }
+
+  document.body.classList.add('export-light');
+  try{
+    const { jsPDF } = window.jspdf;
+    // A3・横向き（420mm×297mm）。1ページ目・2ページ目とも同じ用紙サイズで作成
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a3' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 8; // 用紙の余白(mm)
+
+    for(let i=0;i<wraps.length;i++){
+      const canvas = await captureWideElement(wraps[i]);
+      const imgData = canvas.toDataURL('image/png');
+      // 用紙の余白内に収まるよう、縦横比を保ったまま最大サイズで配置
+      const availW = pageW - margin*2;
+      const availH = pageH - margin*2;
+      const imgRatio = canvas.width / canvas.height;
+      let drawW = availW, drawH = availW / imgRatio;
+      if(drawH > availH){ drawH = availH; drawW = availH * imgRatio; }
+      const x = (pageW - drawW) / 2;
+      const y = (pageH - drawH) / 2;
+      if(i>0) doc.addPage('a3','landscape');
+      doc.addImage(imgData, 'PNG', x, y, drawW, drawH);
+    }
+
+    const label = summaryExportLabel();
+    doc.save('NJSS集計表_'+label+'.pdf');
+    showToast('✓ PDF（A3・全2ページ）を保存しました');
+  }catch(e){
+    console.warn('[SMA] 集計表PDF出力エラー:', e);
+    showToast('⚠ PDFの生成に失敗しました', true);
+  }finally{
     document.body.classList.remove('export-light');
   }
 }
