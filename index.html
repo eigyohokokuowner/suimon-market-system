@@ -1160,11 +1160,7 @@
       <span style="font-size:12px;color:var(--text-muted);font-weight:600;letter-spacing:.5px;padding-top:6px">📅 年度：</span>
       <button class="ana-year-filter-btn active" data-y="all" onclick="setAnaYear('all')" style="margin-top:0">全期間</button>
       <div id="ana-year-filter-btns" style="display:flex;gap:6px;flex-wrap:wrap"></div>
-      <button class="btn export-btn" style="position:absolute;top:10px;right:14px;font-size:10px;padding:4px 10px;white-space:nowrap;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-        <span onclick="exportSummaryAsImage()" style="cursor:pointer">🖼️ 画像保存(白背景・全2枚)</span>
-        <span style="color:var(--border)">|</span>
-        <span onclick="exportSummaryAsPDF()" style="cursor:pointer">📄 PDF保存(A3・全2ページ)</span>
-      </button>
+      <button class="btn export-btn" style="position:absolute;top:10px;right:14px;font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportSummaryAsPDF()">📄 PDF保存(A3縦・全2ページ)</button>
     </div>
 
     <div id="summary-export-wrap-1">
@@ -2762,47 +2758,6 @@ function summaryExportLabel(){
   return (anaFilterMode==='period' && anaPeriod) ? anaPeriod+'期' : (anaYear==='all' ? '全期間' : anaYear);
 }
 
-// 集計表タブ専用：1枚目（10社合計〜国交省内訳）・2枚目（農林省内訳・都道府県内訳）の
-// 2枚のPNGとして書き出す
-async function exportSummaryAsImage(){
-  const wraps = [
-    document.querySelector('#summary-export-wrap-1'),
-    document.querySelector('#summary-export-wrap-2'),
-  ];
-  if(!wraps[0] || !wraps[1]){ showToast('⚠ 出力対象が見つかりません', true); return; }
-
-  showToast('画像を生成しています…');
-  try{
-    await loadHtml2Canvas();
-  }catch(e){
-    showToast('⚠ 画像生成ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
-    return;
-  }
-
-  document.body.classList.add('export-light');
-  try{
-    const label = summaryExportLabel();
-    for(let i=0;i<wraps.length;i++){
-      const canvas = await captureWideElement(wraps[i]);
-      const url = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'NJSS集計表_'+label+'_'+(i+1)+'.png';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // 連続ダウンロードがブラウザに弾かれないよう、1枚ずつ少し間隔をあける
-      await new Promise(r=>setTimeout(r, 300));
-    }
-    showToast('✓ 画像を2枚保存しました（1/2枚目）');
-  }catch(e){
-    console.warn('[SMA] 集計表画像出力エラー:', e);
-    showToast('⚠ 画像の生成に失敗しました', true);
-  }finally{
-    document.body.classList.remove('export-light');
-  }
-}
-
 // 集計表タブ専用：1枚目・2枚目をA3サイズの2ページPDFとして書き出す
 async function exportSummaryAsPDF(){
   const wraps = [
@@ -2823,16 +2778,16 @@ async function exportSummaryAsPDF(){
   document.body.classList.add('export-light');
   try{
     const { jsPDF } = window.jspdf;
-    // A3・横向き（420mm×297mm）。1ページ目・2ページ目とも同じ用紙サイズで作成
-    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a3' });
+    // A3・縦向き（297mm×420mm）。1ページ目・2ページ目とも同じ用紙サイズで作成
+    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a3' });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const margin = 8; // 用紙の余白(mm)
+    const margin = 4; // 用紙の余白(mm)。横幅を用紙ギリギリまで使うため最小限に
 
     for(let i=0;i<wraps.length;i++){
       const canvas = await captureWideElement(wraps[i]);
       const imgData = canvas.toDataURL('image/png');
-      // 用紙の余白内に収まるよう、縦横比を保ったまま最大サイズで配置
+      // 横幅優先：用紙の横幅いっぱいまで拡大し、縦横比を保ったまま高さを決める
       const availW = pageW - margin*2;
       const availH = pageH - margin*2;
       const imgRatio = canvas.width / canvas.height;
@@ -2840,13 +2795,13 @@ async function exportSummaryAsPDF(){
       if(drawH > availH){ drawH = availH; drawW = availH * imgRatio; }
       const x = (pageW - drawW) / 2;
       const y = (pageH - drawH) / 2;
-      if(i>0) doc.addPage('a3','landscape');
+      if(i>0) doc.addPage('a3','portrait');
       doc.addImage(imgData, 'PNG', x, y, drawW, drawH);
     }
 
     const label = summaryExportLabel();
     doc.save('NJSS集計表_'+label+'.pdf');
-    showToast('✓ PDF（A3・全2ページ）を保存しました');
+    showToast('✓ PDF（A3縦・全2ページ）を保存しました');
   }catch(e){
     console.warn('[SMA] 集計表PDF出力エラー:', e);
     showToast('⚠ PDFの生成に失敗しました', true);
