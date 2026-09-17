@@ -16,10 +16,10 @@
     --table-th-bg:#0c1525;--highlight-row-bg:rgba(245,200,66,.05);
     --total-row-bg:rgba(0,200,255,.06);--cur-col-bg:rgba(0,200,255,.04);
   }
-  /* ─── 画像出力用の白背景テーマ（資料貼り付け用）───────────── */
-  /* exportCardAsImage()実行時のみbodyに一時的に付与され、html2canvasでの */
-  /* キャプチャが終わったら自動的に外れる。ダークテーマ専用の色を白背景でも */
-  /* 見やすい配色に置き換えるだけで、レイアウトやロジックには影響しない。 */
+  /* ─── 画像/PDF出力用の白背景テーマ（資料貼り付け用）───────────── */
+  /* exportCardAsPDF()やexportSummaryAsPDF()実行時のみbodyに一時的に付与され、 */
+  /* html2canvasでのキャプチャが終わったら自動的に外れる。ダークテーマ専用の */
+  /* 色を白背景でも見やすい配色に置き換えるだけで、レイアウトやロジックには影響しない。 */
   body.export-light {
     --bg:#ffffff;--surface:#ffffff;--surface2:#f4f6f9;--border:#d7dee6;
     --accent:#0076a8;--accent2:#0090c8;--accent-glow:rgba(0,120,168,.08);
@@ -37,7 +37,9 @@
   body.export-light .org-table th,
   body.export-light .org-table td.col-item{ position:static !important; } /* html2canvasのsticky描画崩れ対策 */
   body.export-light #summary-export-wrap-1 .ana-card,
-  body.export-light #summary-export-wrap-2 .ana-card{ overflow:visible !important; } /* 横に長い表がカード枠で切れないように */
+  body.export-light #summary-export-wrap-2 .ana-card,
+  body.export-light #trend-year-export-wrap .ana-card,
+  body.export-light #card-yearly-rank.ana-card{ overflow:visible !important; } /* 横に長い表がカード枠で切れないように */
   *{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:system-ui,sans-serif;font-size:13px;min-height:100vh;overflow-x:hidden;}
   body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,200,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
@@ -897,7 +899,7 @@
         <div class="ana-card-title">📊 過去5年の受注高比較</div>
         <div style="display:flex;align-items:center;gap:12px">
           <div class="trend-unit" style="margin-bottom:0">金額単位：円</div>
-          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#trend-year-export-wrap','過去5年の受注高比較_年度別推移')">🖼️ 画像保存(白背景)</button>
+          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsPDF('#trend-year-export-wrap','過去5年の受注高比較_年度別推移')">📄 PDF保存(A4横)</button>
         </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
@@ -934,7 +936,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
           <div class="trend-unit" style="margin-bottom:0">金額単位：円</div>
-          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsImage('#card-yearly-rank','各社受注高比較')">🖼️ 画像保存(白背景)</button>
+          <button class="btn export-btn" style="font-size:10px;padding:4px 10px;white-space:nowrap" onclick="exportCardAsPDF('#card-yearly-rank','各社受注高比較')">📄 PDF保存(A4横)</button>
         </div>
       </div>
       <div class="ana-card-body" style="padding:12px">
@@ -1218,9 +1220,7 @@
         <div class="org-table-wrap"><div id="mlit-table-container"></div></div>
       </div>
     </div>
-    </div><!-- /summary-export-wrap-1 -->
 
-    <div id="summary-export-wrap-2">
     <!-- 農林省内訳 -->
     <div class="ana-card ana-grid-full" style="margin-bottom:16px">
       <div class="ana-card-header">
@@ -1231,8 +1231,9 @@
         <div class="org-table-wrap"><div id="maff-table-container"></div></div>
       </div>
     </div>
+    </div><!-- /summary-export-wrap-1 -->
 
-
+    <div id="summary-export-wrap-2">
     <!-- 都道府県内訳 -->
     <div class="ana-card ana-grid-full" style="margin-bottom:16px">
       <div class="ana-card-header">
@@ -2681,35 +2682,42 @@ function loadJsPdf(){
   return window._jspdfLoading;
 }
 
-// 指定したカード要素を、白背景テーマに一時的に切り替えた上でPNG画像として保存する
-async function exportCardAsImage(selector, filename){
+// 指定したカード要素を、白背景テーマに一時的に切り替えた上でA4横向き1枚のPDFとして保存する
+async function exportCardAsPDF(selector, filename){
   const target = document.querySelector(selector);
   if(!target){ showToast('⚠ 出力対象が見つかりません', true); return; }
 
-  showToast('画像を生成しています…');
+  showToast('PDFを生成しています…');
   try{
     await loadHtml2Canvas();
+    await loadJsPdf();
   }catch(e){
-    showToast('⚠ 画像生成ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
+    showToast('⚠ 出力ライブラリの読み込みに失敗しました。通信環境をご確認ください', true);
     return;
   }
 
   document.body.classList.add('export-light');
   try{
-    // CSS変数切り替え後のレイアウト再計算を待ってからキャプチャする
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    const canvas = await window.html2canvas(target, { backgroundColor:'#ffffff', scale:2, useCORS:true });
-    const url = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename + '.png';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast('✓ 画像を保存しました');
+    const canvas = await captureWideElement(target);
+    const { jsPDF } = window.jspdf;
+    // A4・横向き（297mm×210mm）1ページに収める
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 6; // 用紙の余白(mm)
+    const availW = pageW - margin*2;
+    const availH = pageH - margin*2;
+    const imgRatio = canvas.width / canvas.height;
+    let drawW = availW, drawH = availW / imgRatio;
+    if(drawH > availH){ drawH = availH; drawW = availH * imgRatio; }
+    const x = (pageW - drawW) / 2;
+    const y = (pageH - drawH) / 2;
+    doc.addImage(canvas.toDataURL('image/png'), 'PNG', x, y, drawW, drawH);
+    doc.save(filename + '.pdf');
+    showToast('✓ PDF（A4横）を保存しました');
   }catch(e){
-    console.warn('[SMA] 画像出力エラー:', e);
-    showToast('⚠ 画像の生成に失敗しました', true);
+    console.warn('[SMA] PDF出力エラー:', e);
+    showToast('⚠ PDFの生成に失敗しました', true);
   }finally{
     document.body.classList.remove('export-light');
   }
