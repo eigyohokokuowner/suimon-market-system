@@ -200,18 +200,19 @@
   .ana-period-filter-btn.active{background:var(--green);border-color:var(--green);color:#0a0e1a;font-weight:700;}
   /* 機関別集計テーブル */
   .org-table-wrap{overflow-x:auto;margin-bottom:16px;}
-  .org-table{border-collapse:collapse;font-size:11px;white-space:nowrap;}
-  .org-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:5px 8px;color:var(--text-muted);font-weight:700;font-size:10px;letter-spacing:.5px;text-align:center;position:sticky;top:0;z-index:2;}
-  .org-table th.col-item{text-align:left;min-width:80px;position:sticky;left:0;z-index:3;background:var(--table-th-bg);}
-  .org-table td{border:1px solid var(--table-border);padding:4px 8px;color:var(--text);}
-  .org-table td.col-item{color:var(--text-muted);font-weight:600;font-size:10px;background:var(--surface2);position:sticky;left:0;z-index:1;}
-  .org-table td.num{font-family:'Consolas',monospace;text-align:right;font-size:10px;}
-  .org-table td.cnt{color:var(--text-muted);font-size:10px;text-align:right;}
+  .org-table{border-collapse:collapse;font-size:15px;white-space:nowrap;}
+  .org-table th{background:var(--table-th-bg);border:1px solid var(--border);padding:7px 10px;color:var(--text-muted);font-weight:700;font-size:13px;letter-spacing:.5px;text-align:center;position:sticky;top:0;z-index:2;}
+  .org-table th.col-item{text-align:left;min-width:112px;position:sticky;left:0;z-index:3;background:var(--table-th-bg);}
+  .org-table td{border:1px solid var(--table-border);padding:6px 10px;color:var(--text);}
+  .org-table td.col-item{color:var(--text-muted);font-weight:600;font-size:14px;background:var(--surface2);position:sticky;left:0;z-index:1;}
+  .org-table td.num{font-family:'Consolas',monospace;text-align:right;font-size:16px;font-weight:700;}
+  .org-table td.cnt{color:var(--text-muted);font-size:13px;text-align:right;}
   .org-table tr:hover td{background:var(--row-hover);}
   .org-table tr:hover td.col-item{background:var(--surface2);}
   .org-table .row-total td{background:var(--total-row-bg);border-top:2px solid var(--accent);font-weight:700;}
-  .org-table .row-total td.num{color:var(--accent);}
-  .org-co-header{background:var(--surface2)!important;border-bottom:2px solid var(--border)!important;color:var(--text)!important;font-size:10px!important;}
+  .org-table .row-total td.num{color:var(--accent);font-size:18px;}
+  .org-table .row-total td.col-item{font-size:15px;}
+  .org-co-header{background:var(--surface2)!important;border-bottom:2px solid var(--border)!important;color:var(--text)!important;font-size:13px!important;}
 
   /* ─── タブナビ ─── */
   .tab-nav{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;}
@@ -1163,7 +1164,7 @@
 
     <div id="summary-export-wrap">
     <!-- 10社合計（サマリー） -->
-    <div class="ana-card" style="margin-bottom:16px;max-width:400px">
+    <div class="ana-card" style="margin-bottom:16px;max-width:460px">
       <div class="ana-card-header">
         <div class="ana-card-title">📋 10社合計</div>
         <div style="font-size:10px;color:var(--text-muted)" id="org-total-table-period"></div>
@@ -2721,7 +2722,7 @@ async function exportSummaryAsImage(){
   });
   try{
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-    const canvas = await window.html2canvas(wrap, { backgroundColor:'#ffffff', scale:2, useCORS:true });
+    const canvas = await window.html2canvas(wrap, { backgroundColor:'#ffffff', scale:3, useCORS:true });
     const url = canvas.toDataURL('image/png');
     const label = (anaFilterMode==='period' && anaPeriod) ? anaPeriod+'期' : (anaYear==='all' ? '全期間' : anaYear);
     const a = document.createElement('a');
