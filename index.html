@@ -265,6 +265,50 @@
   .mkt-import-zone{border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;background:var(--surface2);}
   .mkt-import-title{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:8px;}
   .mkt-import-row{display:flex;gap:10px;align-items:center;}
+  .mkt-import-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .mkt-import-head .btn{font-size:11px;padding:5px 12px;}
+  /* ─── ログイン・利用状況モーダル ─── */
+  .usage-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:19000;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .usage-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;max-width:900px;width:100%;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  .usage-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 22px 12px;border-bottom:1px solid var(--border);}
+  .usage-title{font-size:15px;font-weight:700;color:var(--text);}
+  .usage-note{font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.6;}
+  .usage-body{flex:1;overflow-y:auto;padding:16px 22px 22px;}
+  .usage-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:22px;}
+  .usage-stat{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+  .usage-stat-label{font-size:11px;color:var(--text-muted);}
+  .usage-stat-value{font-size:24px;font-weight:700;color:var(--accent);margin-top:4px;font-variant-numeric:tabular-nums;}
+  .usage-stat-value small{font-size:12px;font-weight:400;color:var(--text-muted);margin-left:4px;}
+  .usage-section-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:10px;}
+  .usage-chart{display:flex;align-items:flex-end;gap:3px;height:120px;border-bottom:1px solid var(--border);padding-top:16px;}
+  .usage-col{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;}
+  .usage-col-num{font-size:10px;color:var(--text-muted);margin-bottom:2px;font-variant-numeric:tabular-nums;}
+  .usage-bar{width:100%;max-width:26px;background:var(--accent);border-radius:3px 3px 0 0;opacity:.85;}
+  .usage-col.is-today .usage-bar{opacity:1;box-shadow:0 0 10px rgba(0,200,255,.45);}
+  .usage-col.is-weekend .usage-bar{background:var(--accent2);}
+  .usage-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--text-muted);margin:6px 0 24px;}
+  .usage-table{width:100%;border-collapse:collapse;font-size:12px;}
+  .usage-table th{text-align:left;font-weight:400;font-size:11px;color:var(--text-muted);padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:bottom;}
+  .usage-table td{padding:9px 8px;border-bottom:1px solid var(--table-border);color:var(--text);vertical-align:top;}
+  .usage-table td.num{font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .usage-table td.muted{color:var(--text-muted);}
+  .usage-row{cursor:pointer;}
+  .usage-row:hover td{background:var(--row-hover);}
+  .usage-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+  .usage-acc-name{color:var(--accent);font-weight:600;}
+  .usage-acc-role{font-size:10px;color:var(--text-muted);margin-left:6px;font-weight:400;}
+  .usage-caret{display:inline-block;width:12px;color:var(--text-muted);transition:transform .15s;}
+  .usage-row.open .usage-caret{transform:rotate(90deg);}
+  .usage-detail td{background:var(--surface2);padding:10px 8px 12px 28px;}
+  .usage-days{display:flex;flex-wrap:wrap;gap:6px;}
+  .usage-day{font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:12px;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .usage-day span{color:var(--text-muted);margin-left:4px;}
+  .usage-empty{padding:30px;text-align:center;color:var(--text-muted);font-size:12px;}
+  @media (max-width:640px){
+    .usage-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .usage-table th:nth-child(4),.usage-table td:nth-child(4){display:none;}
+  }
+  @media (prefers-reduced-motion:reduce){ .usage-caret{transition:none;} }
   .mkt-list-count{font-family:'Consolas',monospace;font-size:11px;color:var(--text-muted);}
   .mkt-list-count span{color:var(--green);}
 
@@ -425,6 +469,20 @@
       await set(accountsRef, accounts);
     };
 
+    // ── ログイン・利用状況：sma_data とは別パスに保存 ──────────
+    // sma_data 配下に置くとログインのたびに全端末で全データ再読込が走るため分離する。
+    // 構造：sma_access_log/{アカウントID}/{YYYY-MM-DD} = その日の最終アクセス時刻(ms)
+    const ACCESS_PATH = 'sma_access_log';
+    window.fbAccessKey = function(id){ return String(id).replace(/[.#$\[\]\/]/g,'_'); };
+    window.fbRecordAccess = async function(id, dateStr, ts){
+      try{ await set(ref(db, ACCESS_PATH + '/' + window.fbAccessKey(id) + '/' + dateStr), ts); }
+      catch(e){ console.warn('[SMA] 利用記録の書込エラー:', e); }
+    };
+    window.fbLoadAccessLog = async function(){
+      const snap = await get(ref(db, ACCESS_PATH));
+      return snap.exists() ? (snap.val() || {}) : {};
+    };
+
     initFromFirebase();
   </script>
 </head>
@@ -483,7 +541,10 @@
   <div class="tab-pane" id="tab-list">
 <!-- 市場分析案件取込 -->
     <div class="mkt-import-zone">
-      <div class="mkt-import-title">📂 市場分析案件リスト管理</div>
+      <div class="mkt-import-head">
+        <div class="mkt-import-title">📂 市場分析案件リスト管理</div>
+        <button type="button" class="btn" id="usage-open-btn" onclick="openUsageModal()" style="display:none" title="アカウントごとのログイン日と利用日数を確認します（編集可アカウントのみ）">📈 ログイン・利用状況</button>
+      </div>
       <div class="mkt-import-row">
         <div style="position:relative">
           <input type="file" id="mkt-csv-input" accept=".csv" multiple style="display:none">
@@ -2864,6 +2925,7 @@ async function attemptLogin(){
   setCurrentUser({ id: found.id, role: found.role });
   hideLoginOverlay();
   applyRoleRestrictions();
+  recordAccess(true);
 }
 
 function hideLoginOverlay(){
@@ -2924,6 +2986,7 @@ async function checkLoginState(){
   if(found.role !== u.role) setCurrentUser({ id:found.id, role:found.role });
   hideLoginOverlay();
   applyRoleRestrictions();
+  recordAccess(false);
 }
 
 // 権限に応じてタブ表示を制御（閲覧のみ＝案件仕訳タブを隠す）
@@ -2932,11 +2995,156 @@ function applyRoleRestrictions(){
   const listBtn = document.querySelector('.tab-btn[onclick*="tab-list"]');
   if(!u){ return; }
   if(listBtn) listBtn.style.display = (u.role==='edit') ? '' : 'none';
+  const usageBtn = document.getElementById('usage-open-btn');
+  if(usageBtn) usageBtn.style.display = (u.role==='edit') ? '' : 'none';
   // 閲覧のみユーザーが案件仕訳タブを開いたままログインした場合は他タブへ退避
   if(u.role!=='edit'){
     const activePane = document.querySelector('.tab-pane.active');
     if(activePane && activePane.id==='tab-list') switchTab('tab-dam');
   }
+}
+
+// ═══ ログイン・利用状況 ═══════════════════════════
+// 同じ日に何度開いても1日1回として記録する（その日の最終アクセス時刻で上書き）
+function _usageDateStr(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+let _accessRecordedKey = null;
+function recordAccess(force){
+  const u = getCurrentUser();
+  if(!u || typeof window.fbRecordAccess!=='function') return;
+  const now = new Date();
+  const ds = _usageDateStr(now);
+  const k = u.id + '|' + ds;
+  if(!force && _accessRecordedKey===k) return; // 同じページ表示中の再チェックでは書き込まない
+  _accessRecordedKey = k;
+  window.fbRecordAccess(u.id, ds, now.getTime());
+}
+
+async function openUsageModal(){
+  const u = getCurrentUser();
+  if(!u || u.role!=='edit'){ showToast('編集可能アカウントのみ利用できます', true); return; }
+  if(document.getElementById('usage-overlay')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'usage-overlay';
+  overlay.className = 'usage-overlay';
+  overlay.innerHTML = `
+    <div class="usage-box" role="dialog" aria-modal="true" aria-labelledby="usage-title">
+      <div class="usage-head">
+        <div>
+          <div class="usage-title" id="usage-title">📈 ログイン・利用状況</div>
+          <div class="usage-note">アカウントごとの利用日を記録しています。同じ日に何度開いても1日1回として数えます。この機能の導入以降が対象です。</div>
+        </div>
+        <button type="button" class="btn" id="usage-close-btn" style="font-size:12px;padding:7px 16px">閉じる</button>
+      </div>
+      <div class="usage-body" id="usage-body"><div class="usage-empty">読み込み中…</div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+  function onKey(e){ if(e.key==='Escape') close(); }
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+  overlay.querySelector('#usage-close-btn').addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  overlay.querySelector('#usage-close-btn').focus();
+
+  let accounts, logs;
+  try{
+    [accounts, logs] = await Promise.all([loadAccounts(), window.fbLoadAccessLog()]);
+  }catch(e){
+    console.warn('[SMA] 利用状況の読込エラー:', e);
+    overlay.querySelector('#usage-body').innerHTML = '<div class="usage-empty">利用状況を読み込めませんでした。通信状態を確認して、開き直してください。</div>';
+    return;
+  }
+  renderUsage(overlay.querySelector('#usage-body'), accounts || [], logs || {});
+}
+
+function renderUsage(body, accounts, logs){
+  const WD = ['日','月','火','水','木','金','土'];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days30 = [];
+  for(let i=29;i>=0;i--){ const d=new Date(today); d.setDate(d.getDate()-i); days30.push(d); }
+  const ds30 = days30.map(_usageDateStr);
+  const set30 = new Set(ds30), set7 = new Set(ds30.slice(-7)), todayStr = ds30[ds30.length-1];
+  const keyOf = id => (window.fbAccessKey ? window.fbAccessKey(id) : id);
+
+  const rows = accounts.map((a,idx)=>{
+    const log = logs[keyOf(a.id)] || {};
+    const dates = Object.keys(log).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k)).sort().reverse();
+    const last = dates.length ? Math.max(...dates.map(k=>Number(log[k])||0)) : 0;
+    return { a, idx, log, dates, last,
+      d30: dates.filter(k=>set30.has(k)).length,
+      in7: dates.some(k=>set7.has(k)),
+      inToday: dates.includes(todayStr) };
+  });
+  rows.sort((x,y)=> (y.last - x.last) || (x.idx - y.idx));
+
+  const nToday = rows.filter(r=>r.inToday).length;
+  const n7 = rows.filter(r=>r.in7).length;
+  const n30 = rows.filter(r=>r.d30>0).length;
+
+  // 日別ログイン人数
+  const perDay = ds30.map(ds=>rows.filter(r=>r.log[ds]).map(r=>r.a));
+  const maxCnt = Math.max(1, ...perDay.map(l=>l.length));
+  const fmtYMD = d => d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate();
+  const label = a => (a.name ? a.name : a.id);
+  const cols = days30.map((d,i)=>{
+    const list = perDay[i], c = list.length;
+    const tip = fmtYMD(d)+'('+WD[d.getDay()]+')：'+c+'人' + (c ? '\n'+list.map(label).join('、') : '');
+    const cls = ['usage-col', i===29?'is-today':'', (d.getDay()===0||d.getDay()===6)?'is-weekend':''].join(' ');
+    const h = c ? Math.max(4, Math.round(c/maxCnt*100)) : 0;
+    return `<div class="${cls}" title="${esc(tip)}">${c?`<div class="usage-col-num">${c}</div>`:''}<div class="usage-bar" style="height:${h}%"></div></div>`;
+  }).join('');
+
+  const fmtLast = ts => { const d=new Date(ts); return fmtYMD(d)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
+  const tableRows = rows.map((r,i)=>{
+    const a = r.a;
+    const who = `<span class="usage-acc-name">${esc([a.name,a.affiliation].filter(Boolean).join(' '))}${(a.name||a.affiliation)?' ':''}(${esc(a.id)})</span>${a.role==='edit'?'':'<span class="usage-acc-role">閲覧のみ</span>'}`;
+    const chips = r.dates.length
+      ? '<div class="usage-days">'+r.dates.map(k=>{
+          const [y,m,dd]=k.split('-').map(Number); const d=new Date(y,m-1,dd); const t=new Date(Number(r.log[k])||0);
+          return `<span class="usage-day">${y}/${m}/${dd}(${WD[d.getDay()]})<span>${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}</span></span>`;
+        }).join('')+'</div><div class="usage-note">時刻はその日の最後に開いた時刻です。</div>'
+      : '<div class="usage-note" style="margin:0">まだログインの記録がありません。</div>';
+    return `<tr class="usage-row" tabindex="0" data-i="${i}" aria-expanded="false">
+        <td><span class="usage-caret">▸</span>${who}</td>
+        <td class="num ${r.last?'':'muted'}">${r.last?fmtLast(r.last):'記録なし'}</td>
+        <td class="num">${r.d30}日</td>
+        <td class="num">${r.dates.length}日</td>
+      </tr>
+      <tr class="usage-detail" data-for="${i}" hidden><td colspan="4">${chips}</td></tr>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="usage-stats">
+      <div class="usage-stat"><div class="usage-stat-label">今日のログイン</div><div class="usage-stat-value">${nToday}<small>人</small></div></div>
+      <div class="usage-stat"><div class="usage-stat-label">直近7日</div><div class="usage-stat-value">${n7}<small>人</small></div></div>
+      <div class="usage-stat"><div class="usage-stat-label">直近30日</div><div class="usage-stat-value">${n30}<small>人</small></div></div>
+      <div class="usage-stat"><div class="usage-stat-label">全アカウント</div><div class="usage-stat-value">${accounts.length}<small>件</small></div></div>
+    </div>
+    <div class="usage-section-title">日別ログイン人数（直近30日）</div>
+    <div class="usage-chart">${cols}</div>
+    <div class="usage-axis"><span>${fmtYMD(days30[0])}</span><span>${fmtYMD(days30[29])}</span></div>
+    <div class="usage-section-title">アカウント別<span class="usage-acc-role" style="margin-left:8px">行をクリックすると、ログインした日の一覧が開きます</span></div>
+    <div style="overflow-x:auto">
+      <table class="usage-table">
+        <thead><tr><th>アカウント</th><th>最終ログイン</th><th>直近30日の利用日数</th><th>累計利用日数</th></tr></thead>
+        <tbody>${tableRows || '<tr><td colspan="4" class="usage-empty">アカウントがありません</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  body.querySelectorAll('.usage-row').forEach(tr=>{
+    const toggle = ()=>{
+      const det = body.querySelector(`.usage-detail[data-for="${tr.dataset.i}"]`);
+      const open = det.hidden;
+      det.hidden = !open;
+      tr.classList.toggle('open', open);
+      tr.setAttribute('aria-expanded', String(open));
+    };
+    tr.addEventListener('click', toggle);
+    tr.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } });
+  });
 }
 
 // ═══ アカウント管理モーダル ═══════════════════════════
