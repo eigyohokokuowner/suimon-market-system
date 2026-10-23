@@ -265,9 +265,11 @@
   .mkt-import-zone{border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;background:var(--surface2);}
   .mkt-import-title{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:8px;}
   .mkt-import-row{display:flex;gap:10px;align-items:center;}
-  .excl-restore-btn{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;font-family:inherit;background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4);cursor:pointer;}
-  .excl-restore-btn:hover{background:rgba(0,229,160,0.15);color:var(--green);border-color:var(--green);}
-  .excl-restore-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .case-state-btn{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:8px;font-size:9px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap;vertical-align:middle;}
+  .case-state-btn.is-excluded{background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4);}
+  .case-state-btn.is-included{background:transparent;color:var(--green);border:1px solid rgba(0,229,160,0.35);opacity:.75;}
+  button.case-state-btn:hover{opacity:1;filter:brightness(1.2);}
+  .case-state-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .mkt-import-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .mkt-import-head .btn{font-size:11px;padding:5px 12px;}
   /* ─── ログイン・利用状況モーダル ─── */
@@ -3415,6 +3417,7 @@ function loadMktList(){
 
   const _repairedCount = repairMktListDates();
   const _renamedCount = repairMktListCompanyNames();
+  applyCaseStates(); // 集計対象／集計除外の切替状態を反映（同じ工事の重複もここで1件にまとめる）
   if(_repairedCount > 0 || _renamedCount > 0){ saveMktList(); }
   updateMktCount();
 }
@@ -6650,23 +6653,58 @@ const CASELIST_KEYS = [
   '案件公示日','入札日','入札資格','業種','落札日(契約日)','落札価格(税抜)','予定価格'
 ];
 
-// 集計除外（特殊案件）の案件を集計対象に戻す（編集可アカウントのみ）
-function restoreExcludedCase(idx){
+// ═══ 集計対象／集計除外の切替 ═══════════════════════
+// 1つの工事＝1件として扱う。切替状態は「受注会社＋案件名＋落札日」をキーに
+// njss_mkt_case_state に保存し、読込のたびに mktList / mktListExcluded へ適用する。
+// （リスト本体を書き換えないので、連打や他端末との同期で件数が増えることはない）
+const MKT_CASE_STATE_KEY = 'njss_mkt_case_state';
+let _caselistPageRows = [];
+function caseKey(r){
+  const co = String(r['受注会社']||'').trim();
+  const nm = String(r['案件名']||'').replace(/[\s\u3000]+/g,' ').trim();
+  const dm = String(r['落札日(契約日)']||'').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+  const dt = dm ? (dm[1]+'/'+Number(dm[2])+'/'+Number(dm[3])) : String(r['落札日(契約日)']||'').trim();
+  return co+'|'+nm+'|'+dt;
+}
+function loadCaseStates(){
+  try{ const v = LS.get(MKT_CASE_STATE_KEY); const o = v ? JSON.parse(v) : {}; return (o && typeof o==='object') ? o : {}; }
+  catch(e){ return {}; }
+}
+function _casePrice(r){ return parseFloat(String(r['落札価格(税抜)']||'').replace(/[^0-9.-]/g,''))||0; }
+function applyCaseStates(){
+  const states = loadCaseStates();
+  const keys = Object.keys(states);
+  if(!keys.length) return;
+  const want = new Set(keys);
+  const groups = {};
+  const collect = (arr)=>arr.forEach(r=>{ const k=caseKey(r); if(want.has(k)) (groups[k]=groups[k]||[]).push(r); });
+  collect(mktList); collect(mktListExcluded);
+  const drop = new Set();
+  const keepInc = [], keepExc = [];
+  Object.keys(groups).forEach(k=>{
+    const g = groups[k];
+    // 同じ工事が複数ある場合は、落札価格のあるもの（同額なら過去リスト以外）を1件だけ残す
+    const best = g.slice().sort((a,b)=> (_casePrice(b)-_casePrice(a)) || ((a['追加元']==='過去リスト')-(b['追加元']==='過去リスト')))[0];
+    g.forEach(r=>drop.add(r));
+    if(states[k]==='exclude'){ best['集計除外'] = true; keepExc.push(best); }
+    else { delete best['集計除外']; keepInc.push(best); }
+  });
+  if(!drop.size) return;
+  mktList = mktList.filter(r=>!drop.has(r)).concat(keepInc);
+  mktListExcluded = mktListExcluded.filter(r=>!drop.has(r)).concat(keepExc);
+}
+function setCaseState(pi, state){
   const u = getCurrentUser();
   if(!u || u.role!=='edit'){ showToast('編集可能アカウントのみ利用できます', true); return; }
-  const r = mktListExcluded[idx];
+  const r = _caselistPageRows[pi];
   if(!r) return;
-  const label = (r['受注会社']||'') + '／' + (r['案件名']||'') + (r['落札日(契約日)'] ? '（'+r['落札日(契約日)']+'）' : '');
-  if(!confirm('この案件を集計対象に戻しますか？\n\n' + label + '\n\n戻すと、各社比較・エリア比較・集計表などの集計に含まれるようになります。')) return;
-  mktListExcluded.splice(idx, 1);
-  delete r['集計除外'];
-  if(r['追加元']==='過去リスト') r['追加元'] = '集計除外から復帰'; // 保存対象から漏れないようにする
-  mktList.push(r);
-  saveMktList();
-  saveMktListExcluded();
+  const states = loadCaseStates();
+  states[caseKey(r)] = state;
+  LS.set(MKT_CASE_STATE_KEY, JSON.stringify(states)); // 書き込みはこの1キーのみ
+  applyCaseStates();
   updateMktCount();
   renderCaseList();
-  showToast('✓ 集計対象に戻しました：' + (r['案件名']||''));
+  showToast(state==='exclude' ? '集計除外にしました：'+(r['案件名']||'') : '✓ 集計対象にしました：'+(r['案件名']||''));
 }
 
 function renderCaseList(){
@@ -6725,15 +6763,19 @@ function renderCaseList(){
     return isNaN(n)||n===0 ? '' : '¥'+Math.round(n).toLocaleString('ja-JP');
   };
 
+  _caselistPageRows = [];
   tbody.innerHTML = page.map(r=>{
     const co = r['受注会社']||'';
-    const exIdx = r['集計除外'] ? mktListExcluded.indexOf(r) : -1;
     const _cu = getCurrentUser();
-    const excludedBadge = (r['集計除外'] && _cu && _cu.role==='edit' && exIdx>=0)
-      ? '<button type="button" class="excl-restore-btn" onclick="restoreExcludedCase('+exIdx+')" title="クリックすると、この案件を集計対象に戻します（編集可アカウントのみ）">集計除外 ↩</button>'
-      : r['集計除外']
-      ? '<span style="display:inline-block;margin-right:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4)" title="この案件は各社受注案件リストにのみ表示され、他の集計・分析タブには含まれません">集計除外</span>'
-      : '';
+    const _canEdit = !!(_cu && _cu.role==='edit');
+    const _pi = _caselistPageRows.length; _caselistPageRows.push(r);
+    const excludedBadge = _canEdit
+      ? (r['集計除外']
+          ? '<button type="button" class="case-state-btn is-excluded" onclick="setCaseState('+_pi+',\'include\')" title="クリックすると集計対象になります">集計除外</button>'
+          : '<button type="button" class="case-state-btn is-included" onclick="setCaseState('+_pi+',\'exclude\')" title="クリックすると集計除外になります">集計対象</button>')
+      : (r['集計除外']
+          ? '<span class="case-state-btn is-excluded" style="cursor:default" title="この案件は各社受注案件リストにのみ表示され、他の集計・分析タブには含まれません">集計除外</span>'
+          : '');
     return '<tr>'
       +'<td class="col-company" title="'+esc(co)+'">'+esc(co)+'</td>'
       +'<td class="col-id">'+esc(r['案件ID']||'')+'</td>'
