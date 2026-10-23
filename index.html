@@ -265,6 +265,9 @@
   .mkt-import-zone{border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px;background:var(--surface2);}
   .mkt-import-title{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:8px;}
   .mkt-import-row{display:flex;gap:10px;align-items:center;}
+  .excl-restore-btn{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;font-family:inherit;background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4);cursor:pointer;}
+  .excl-restore-btn:hover{background:rgba(0,229,160,0.15);color:var(--green);border-color:var(--green);}
+  .excl-restore-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .mkt-import-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .mkt-import-head .btn{font-size:11px;padding:5px 12px;}
   /* ─── ログイン・利用状況モーダル ─── */
@@ -6647,6 +6650,25 @@ const CASELIST_KEYS = [
   '案件公示日','入札日','入札資格','業種','落札日(契約日)','落札価格(税抜)','予定価格'
 ];
 
+// 集計除外（特殊案件）の案件を集計対象に戻す（編集可アカウントのみ）
+function restoreExcludedCase(idx){
+  const u = getCurrentUser();
+  if(!u || u.role!=='edit'){ showToast('編集可能アカウントのみ利用できます', true); return; }
+  const r = mktListExcluded[idx];
+  if(!r) return;
+  const label = (r['受注会社']||'') + '／' + (r['案件名']||'') + (r['落札日(契約日)'] ? '（'+r['落札日(契約日)']+'）' : '');
+  if(!confirm('この案件を集計対象に戻しますか？\n\n' + label + '\n\n戻すと、各社比較・エリア比較・集計表などの集計に含まれるようになります。')) return;
+  mktListExcluded.splice(idx, 1);
+  delete r['集計除外'];
+  if(r['追加元']==='過去リスト') r['追加元'] = '集計除外から復帰'; // 保存対象から漏れないようにする
+  mktList.push(r);
+  saveMktList();
+  saveMktListExcluded();
+  updateMktCount();
+  renderCaseList();
+  showToast('✓ 集計対象に戻しました：' + (r['案件名']||''));
+}
+
 function renderCaseList(){
   const data = getCaselistData();
 
@@ -6705,7 +6727,11 @@ function renderCaseList(){
 
   tbody.innerHTML = page.map(r=>{
     const co = r['受注会社']||'';
-    const excludedBadge = r['集計除外']
+    const exIdx = r['集計除外'] ? mktListExcluded.indexOf(r) : -1;
+    const _cu = getCurrentUser();
+    const excludedBadge = (r['集計除外'] && _cu && _cu.role==='edit' && exIdx>=0)
+      ? '<button type="button" class="excl-restore-btn" onclick="restoreExcludedCase('+exIdx+')" title="クリックすると、この案件を集計対象に戻します（編集可アカウントのみ）">集計除外 ↩</button>'
+      : r['集計除外']
       ? '<span style="display:inline-block;margin-right:6px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4)" title="この案件は各社受注案件リストにのみ表示され、他の集計・分析タブには含まれません">集計除外</span>'
       : '';
     return '<tr>'
