@@ -269,6 +269,9 @@
   .case-state-btn.is-excluded{background:rgba(255,150,0,0.18);color:#ff9600;border:1px solid rgba(255,150,0,0.4);}
   .case-state-btn.is-included{background:transparent;color:var(--green);border:1px solid rgba(0,229,160,0.35);opacity:.75;}
   button.case-state-btn:hover{opacity:1;filter:brightness(1.2);}
+  .case-del-btn{display:inline-block;margin-right:6px;padding:0 5px;border-radius:6px;font-size:10px;line-height:16px;font-family:inherit;cursor:pointer;background:transparent;color:var(--text-muted);border:1px solid transparent;vertical-align:middle;opacity:.55;}
+  .case-del-btn:hover{opacity:1;color:var(--red);border-color:rgba(255,95,126,0.45);background:rgba(255,95,126,0.1);}
+  .case-del-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;opacity:1;}
   .case-state-btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
   .mkt-import-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
   .mkt-import-head .btn{font-size:11px;padding:5px 12px;}
@@ -3394,6 +3397,7 @@ function loadMktList(){
   } else {
     // 未クリア：PAST_MKT_DATAをベースにロード
     mktList = PAST_MKT_DATA.map(d=>Object.assign({},d));
+    mktList = applyPastDeletions(mktList); // 各社受注案件リストで削除した過去リストの案件を除く
     // 追加データ（案件仕訳から反映した分）を必ずマージする。
     // ※以前はバージョンマーカー（njss_mkt_list_ver）が一時的に見つからない場合に
     //   追加データを削除（Firebase側も削除）してしまう危険なロジックがあったため撤去した。
@@ -6707,6 +6711,94 @@ function setCaseState(pi, state){
   showToast(state==='exclude' ? '集計除外にしました：'+(r['案件名']||'') : '✓ 集計対象にしました：'+(r['案件名']||''));
 }
 
+// ═══ 案件の削除（編集可アカウント・パスワード必須） ═══════════
+// 過去リスト（ファイル埋め込みデータ）は読込のたびに復元されるため、削除した案件を
+// njss_mkt_deleted_past に記録して読込時に取り除く。それ以外は保存済みリストから直接削除する。
+const MKT_DELETED_PAST_KEY = 'njss_mkt_deleted_past';
+const CASE_DELETE_PASSWORD = 'suishin';
+function caseFingerprint(r){
+  return [caseKey(r), _casePrice(r), String(r['施工場所']||'').trim(), String(r['機関']||'').trim()].join('|');
+}
+function loadPastDeletions(){
+  try{ const v = LS.get(MKT_DELETED_PAST_KEY); const o = v ? JSON.parse(v) : {}; return (o && typeof o==='object') ? o : {}; }
+  catch(e){ return {}; }
+}
+function applyPastDeletions(list){
+  const del = loadPastDeletions();
+  if(!Object.keys(del).length) return list;
+  const left = Object.assign({}, del);
+  return list.filter(r=>{
+    if(r['追加元']!=='過去リスト') return true;
+    const fp = caseFingerprint(r);
+    if(left[fp] > 0){ left[fp]--; return false; }
+    return true;
+  });
+}
+function deleteCaseRow(r){
+  const iInc = mktList.indexOf(r), iExc = mktListExcluded.indexOf(r);
+  if(iInc<0 && iExc<0) return false;
+  const isPast = r['追加元']==='過去リスト' && !LS.get('njss_mkt_cleared');
+  if(isPast){
+    const del = loadPastDeletions();
+    const fp = caseFingerprint(r);
+    del[fp] = (del[fp]||0) + 1;
+    LS.set(MKT_DELETED_PAST_KEY, JSON.stringify(del));
+  }
+  if(iInc>=0){ mktList.splice(iInc,1); if(!isPast) saveMktList(); }
+  if(iExc>=0){ mktListExcluded.splice(iExc,1); saveMktListExcluded(); }
+  return true;
+}
+function openCaseDeleteModal(pi){
+  const u = getCurrentUser();
+  if(!u || u.role!=='edit'){ showToast('編集可能アカウントのみ利用できます', true); return; }
+  const r = _caselistPageRows[pi];
+  if(!r || document.getElementById('case-del-overlay')) return;
+  const price = _casePrice(r);
+  const overlay = document.createElement('div');
+  overlay.id = 'case-del-overlay';
+  overlay.className = 'usage-overlay';
+  overlay.innerHTML = `
+    <div class="usage-box" role="dialog" aria-modal="true" aria-labelledby="case-del-title" style="max-width:520px">
+      <div class="usage-head"><div class="usage-title" id="case-del-title">🗑 案件をリストから削除</div></div>
+      <div class="usage-body">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12px;line-height:1.8;margin-bottom:14px">
+          <div><span style="color:var(--text-muted)">受注会社　</span>${esc(r['受注会社']||'')}</div>
+          <div><span style="color:var(--text-muted)">案件名　　</span>${esc(r['案件名']||'')}</div>
+          <div><span style="color:var(--text-muted)">機関・場所</span>　${esc(r['機関']||'')}／${esc(r['施工場所']||'')}</div>
+          <div><span style="color:var(--text-muted)">落札日　　</span>${esc(r['落札日(契約日)']||'')}　<span style="color:var(--text-muted)">落札価格</span>　${price?'¥'+Math.round(price).toLocaleString('ja-JP'):'なし'}</div>
+        </div>
+        <div class="usage-note" style="margin:0 0 12px">この1件だけを削除します。削除すると、各社受注案件リストとすべての集計から消え、元に戻せません。</div>
+        <label for="case-del-pass" style="display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:6px">パスワード</label>
+        <input id="case-del-pass" type="password" autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px">
+        <div id="case-del-err" style="font-size:11px;color:var(--red);min-height:16px;margin-top:6px;font-weight:600"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+          <button type="button" class="btn" id="case-del-cancel">キャンセル</button>
+          <button type="button" class="btn btn-danger" id="case-del-ok">削除する</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const passEl = overlay.querySelector('#case-del-pass');
+  const errEl = overlay.querySelector('#case-del-err');
+  function close(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+  function onKey(e){ if(e.key==='Escape') close(); }
+  function submit(){
+    if(passEl.value !== CASE_DELETE_PASSWORD){ errEl.textContent = 'パスワードが違います。'; passEl.select(); return; }
+    const ok = deleteCaseRow(r);
+    close();
+    if(!ok){ showToast('⚠ この案件は見つかりませんでした。画面を開き直してください', true); renderCaseList(); return; }
+    updateMktCount();
+    renderCaseList();
+    showToast('🗑 削除しました：'+(r['受注会社']||'')+'／'+(r['案件名']||''));
+  }
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+  overlay.querySelector('#case-del-cancel').addEventListener('click', close);
+  overlay.querySelector('#case-del-ok').addEventListener('click', submit);
+  passEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submit(); } });
+  document.addEventListener('keydown', onKey);
+  passEl.focus();
+}
+
 function renderCaseList(){
   const data = getCaselistData();
 
@@ -6773,6 +6865,7 @@ function renderCaseList(){
       ? (r['集計除外']
           ? '<button type="button" class="case-state-btn is-excluded" onclick="setCaseState('+_pi+',\'include\')" title="クリックすると集計対象になります">集計除外</button>'
           : '<button type="button" class="case-state-btn is-included" onclick="setCaseState('+_pi+',\'exclude\')" title="クリックすると集計除外になります">集計対象</button>')
+        + '<button type="button" class="case-del-btn" onclick="openCaseDeleteModal('+_pi+')" title="この案件をリストから削除します（パスワードが必要です）" aria-label="この案件を削除">🗑</button>'
       : (r['集計除外']
           ? '<span class="case-state-btn is-excluded" style="cursor:default" title="この案件は各社受注案件リストにのみ表示され、他の集計・分析タブには含まれません">集計除外</span>'
           : '');
